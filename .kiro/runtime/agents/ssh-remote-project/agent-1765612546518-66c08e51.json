@@ -1,0 +1,11 @@
+{
+  "agentId": "agent-1765612546518-66c08e51",
+  "specId": "ssh-remote-project",
+  "phase": "document-review-fix",
+  "pid": 96273,
+  "sessionId": "eba079b2-d1ef-4360-b7df-091a9d134d55",
+  "status": "completed",
+  "startedAt": "2025-12-13T07:55:46.518Z",
+  "lastActivityAt": "2025-12-13T07:55:58.840Z",
+  "command": "claude -p --verbose --output-format stream-json /kiro:document-review-reply ssh-remote-project 1 --fix"
+}

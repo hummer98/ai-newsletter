@@ -1,0 +1,11 @@
+{
+  "agentId": "agent-1765610834358-6f98a429",
+  "specId": "newsletter-github-actions",
+  "phase": "document-review",
+  "pid": 67575,
+  "sessionId": "f8c0c7da-8c62-43a6-b372-599b7f6cf268",
+  "status": "completed",
+  "startedAt": "2025-12-13T07:27:14.358Z",
+  "lastActivityAt": "2025-12-13T07:28:56.095Z",
+  "command": "claude -p --verbose --output-format stream-json /kiro:document-review newsletter-github-actions"
+}

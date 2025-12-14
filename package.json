@@ -1,0 +1,37 @@
+{
+  "name": "ai-newsletter",
+  "version": "1.0.0",
+  "description": "AI-powered automated newsletter system using GitHub Actions",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src tests --ext .ts",
+    "install:ainews": "npx tsx scripts/install-ainews-example.ts"
+  },
+  "keywords": [
+    "newsletter",
+    "automation",
+    "github-actions"
+  ],
+  "author": "Yuji Yamamoto <rr.yamamoto@gmail.com> (https://github.com/hummer98)",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/firestore": "^7.10.0",
+    "resend": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  }
+}
