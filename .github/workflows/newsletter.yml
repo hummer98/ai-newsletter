@@ -145,8 +145,6 @@ jobs:
           # Use OAuth Token if available, otherwise fall back to API Key
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
-          # Auto-approve all tool usage in CI environment
-          CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS: "true"
         run: |
           echo "Generating newsletter with Claude Code..."
           THEMES=$(cat output/themes.json)
