@@ -55,9 +55,9 @@ source .env
 3. Create an API key from the [API Keys](https://resend.com/api-keys) section
 4. Set `RESEND_API_KEY` and `FROM_EMAIL` in `.env`
 
-### 4. Anthropic Authentication Setup
+### 4. Claude Code Authentication Setup
 
-Claude Code requires authentication to generate newsletter content. You can use either an API Key or OAuth Token.
+Choose ONE authentication method based on your subscription type:
 
 #### Option A: OAuth Token (Recommended for Claude Pro/Max subscribers)
 
@@ -66,15 +66,13 @@ Claude Code requires authentication to generate newsletter content. You can use 
    claude setup-token
    ```
 2. Copy the OAuth token (starts with `sk-ant-oat01-`)
-3. Set `ANTHROPIC_API_KEY` in `.env` with the OAuth token value
+3. Set `CLAUDE_CODE_OAUTH_TOKEN` in `.env`
 
 #### Option B: API Key (For API subscription users)
 
 1. Sign up at [Anthropic Console](https://console.anthropic.com/)
 2. Create an API key from the [API Keys](https://console.anthropic.com/settings/keys) section
 3. Set `ANTHROPIC_API_KEY` in `.env` with the API key (starts with `sk-ant-api03-`)
-
-**Note**: Despite the variable name `ANTHROPIC_API_KEY`, you can use either an API Key or OAuth Token. The workflow will automatically detect and use the appropriate authentication method.
 
 ### 5. GCP Workload Identity Federation Setup
 
@@ -177,9 +175,12 @@ Configure the following in repository Settings > Secrets and variables > Actions
 |------|-------------|
 | `RESEND_API_KEY` | Resend API key |
 | `FROM_EMAIL` | Sender email address |
-| `ANTHROPIC_API_KEY` | Anthropic API key (sk-ant-api03-) or OAuth token (sk-ant-oat01-) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | (Option A) Claude OAuth token for Pro/Max subscribers |
+| `ANTHROPIC_API_KEY` | (Option B) Anthropic API key for API subscription users |
 | `WORKLOAD_IDENTITY_PROVIDER` | Full path of WIF provider |
 | `SERVICE_ACCOUNT_EMAIL` | Service account email |
+
+**Note**: Set either `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`, not both.
 
 **Variables (Non-sensitive)**
 

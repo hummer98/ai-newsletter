@@ -55,9 +55,9 @@ source .env
 3. [API Keys](https://resend.com/api-keys) から API キーを作成
 4. `.env` の `RESEND_API_KEY` と `FROM_EMAIL` を設定
 
-### 4. Anthropic 認証のセットアップ
+### 4. Claude Code 認証のセットアップ
 
-Claude Codeがニュースレターコンテンツを生成するには認証が必要です。APIキーまたはOAuthトークンのいずれかを使用できます。
+サブスクリプションタイプに応じて、以下のいずれか1つを選択してください：
 
 #### オプションA: OAuthトークン（Claude Pro/Maxサブスクリプションユーザー向け、推奨）
 
@@ -66,15 +66,13 @@ Claude Codeがニュースレターコンテンツを生成するには認証が
    claude setup-token
    ```
 2. OAuthトークン（`sk-ant-oat01-`で始まる）をコピー
-3. `.env`の`ANTHROPIC_API_KEY`にOAuthトークンの値を設定
+3. `.env`の`CLAUDE_CODE_OAUTH_TOKEN`に設定
 
 #### オプションB: APIキー（API サブスクリプションユーザー向け）
 
 1. [Anthropic Console](https://console.anthropic.com/) にサインアップ
 2. [API Keys](https://console.anthropic.com/settings/keys) から API キーを作成
 3. `.env`の`ANTHROPIC_API_KEY`にAPIキー（`sk-ant-api03-`で始まる）を設定
-
-**注**: 変数名は`ANTHROPIC_API_KEY`ですが、APIキーまたはOAuthトークンのいずれも使用できます。ワークフローは自動的に適切な認証方式を検出して使用します。
 
 ### 5. GCP Workload Identity Federation の設定
 
@@ -177,9 +175,12 @@ themes/
 |------|-------------|
 | `RESEND_API_KEY` | Resend APIキー |
 | `FROM_EMAIL` | 送信元メールアドレス |
-| `ANTHROPIC_API_KEY` | Anthropic APIキー (sk-ant-api03-) または OAuthトークン (sk-ant-oat01-) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | （オプションA）Claude Pro/Max用のOAuthトークン |
+| `ANTHROPIC_API_KEY` | （オプションB）APIサブスクリプション用のAPIキー |
 | `WORKLOAD_IDENTITY_PROVIDER` | WIF プロバイダーの完全パス |
 | `SERVICE_ACCOUNT_EMAIL` | サービスアカウントのメール |
+
+**注**: `CLAUDE_CODE_OAUTH_TOKEN`または`ANTHROPIC_API_KEY`のいずれか一方のみを設定してください。
 
 **Variables（非機密情報）**
 

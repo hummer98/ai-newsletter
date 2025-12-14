@@ -140,9 +140,9 @@ jobs:
       - name: Generate newsletter with Claude Code
         if: steps.fetch-themes.outputs.has_themes == 'true'
         env:
-          # Support both OAuth Token (sk-ant-oat01-) and API Key (sk-ant-api03-)
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Use OAuth Token if available, otherwise fall back to API Key
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
         run: |
           echo "Generating newsletter with Claude Code..."
           THEMES=$(cat output/themes.json)

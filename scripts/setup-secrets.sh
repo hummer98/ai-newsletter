@@ -18,7 +18,6 @@ required_vars=(
   "SERVICE_ACCOUNT_NAME"
   "RESEND_API_KEY"
   "FROM_EMAIL"
-  "ANTHROPIC_API_KEY"
 )
 
 for var in "${required_vars[@]}"; do
@@ -27,6 +26,14 @@ for var in "${required_vars[@]}"; do
     exit 1
   fi
 done
+
+# Check that at least one authentication method is set
+if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+  echo "Error: Either CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY must be set in .env"
+  echo "  - Use CLAUDE_CODE_OAUTH_TOKEN for Claude Pro/Max subscription (OAuth)"
+  echo "  - Use ANTHROPIC_API_KEY for API subscription"
+  exit 1
+fi
 
 echo "Setting up GitHub Secrets and Variables..."
 
@@ -47,7 +54,12 @@ echo "  WORKLOAD_IDENTITY_PROVIDER: $WORKLOAD_IDENTITY_PROVIDER"
 echo "  SERVICE_ACCOUNT_EMAIL: $SERVICE_ACCOUNT_EMAIL"
 echo "  FROM_EMAIL: $FROM_EMAIL"
 echo "  RESEND_API_KEY: (hidden)"
-echo "  ANTHROPIC_API_KEY: (hidden)"
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+  echo "  CLAUDE_CODE_OAUTH_TOKEN: (hidden)"
+fi
+if [ -n "$ANTHROPIC_API_KEY" ]; then
+  echo "  ANTHROPIC_API_KEY: (hidden)"
+fi
 echo ""
 
 read -p "Continue? (y/N): " confirm
@@ -66,7 +78,17 @@ gh secret set WORKLOAD_IDENTITY_PROVIDER --body "$WORKLOAD_IDENTITY_PROVIDER"
 gh secret set SERVICE_ACCOUNT_EMAIL --body "$SERVICE_ACCOUNT_EMAIL"
 gh secret set RESEND_API_KEY --body "$RESEND_API_KEY"
 gh secret set FROM_EMAIL --body "$FROM_EMAIL"
-gh secret set ANTHROPIC_API_KEY --body "$ANTHROPIC_API_KEY"
+
+# Set Claude Code authentication (only one will be set based on .env)
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+  echo "Setting CLAUDE_CODE_OAUTH_TOKEN..."
+  gh secret set CLAUDE_CODE_OAUTH_TOKEN --body "$CLAUDE_CODE_OAUTH_TOKEN"
+fi
+
+if [ -n "$ANTHROPIC_API_KEY" ]; then
+  echo "Setting ANTHROPIC_API_KEY..."
+  gh secret set ANTHROPIC_API_KEY --body "$ANTHROPIC_API_KEY"
+fi
 
 echo ""
 echo "Done! GitHub Secrets and Variables have been set."
