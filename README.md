@@ -61,6 +61,20 @@ Configure Workload Identity Federation for GitHub Actions to access GCP resource
 
 Since `CLOUDSDK_CORE_PROJECT` is set in `.env`, you can omit the `--project` flag.
 
+#### Enable Required APIs
+
+First, enable the necessary Google Cloud APIs:
+
+```bash
+# Enable Firestore API
+gcloud services enable firestore.googleapis.com
+
+# Enable IAM Service Account Credentials API (required for Workload Identity Federation)
+gcloud services enable iamcredentials.googleapis.com
+```
+
+#### Configure Workload Identity
+
 ```bash
 # Create Workload Identity Pool
 gcloud iam workload-identity-pools create $POOL_NAME \

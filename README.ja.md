@@ -61,6 +61,20 @@ GitHub ActionsからGCPリソースにアクセスするために、Workload Ide
 
 `.env` で `CLOUDSDK_CORE_PROJECT` を設定しているため、`--project` フラグは省略できます。
 
+#### 必要なAPIの有効化
+
+まず、必要なGoogle Cloud APIを有効化します：
+
+```bash
+# Firestore APIの有効化
+gcloud services enable firestore.googleapis.com
+
+# IAM Service Account Credentials APIの有効化（Workload Identity Federationに必要）
+gcloud services enable iamcredentials.googleapis.com
+```
+
+#### Workload Identityの設定
+
 ```bash
 # Workload Identity Poolの作成
 gcloud iam workload-identity-pools create $POOL_NAME \
