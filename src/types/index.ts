@@ -1,9 +1,22 @@
 /**
+ * Schedule configuration for newsletter delivery
+ * Formats:
+ * - "weekly:monday" - every Monday
+ * - "weekly:tuesday" - every Tuesday
+ * - "biweekly:monday" - every other Monday (based on lastDeliveredAt)
+ * - "monthly:1,11,21" - on 1st, 11th, 21st of each month
+ */
+export type ScheduleConfig = string;
+
+/**
  * Theme configuration stored in Firestore
  */
 export interface Theme {
   id: string;
+  title: string;
   prompt: string;
+  schedule?: ScheduleConfig;
+  lastDeliveredAt?: Date;
 }
 
 /**

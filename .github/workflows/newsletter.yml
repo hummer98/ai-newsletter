@@ -1,15 +1,21 @@
 name: Newsletter Delivery
 
 on:
-  # Weekly schedule: Every Monday at 0:00 UTC (9:00 JST)
+  # Daily schedule: Every day at 0:00 UTC (9:00 JST)
+  # Schedule-based filtering is handled by fetch-themes.ts
   schedule:
-    - cron: '0 0 * * 1'
+    - cron: '0 0 * * *'
 
   # Manual trigger support
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'Run in dry-run mode (no emails sent)'
+        required: false
+        default: false
+        type: boolean
+      skip_schedule_check:
+        description: 'Skip schedule check (send regardless of schedule)'
         required: false
         default: false
         type: boolean
@@ -49,6 +55,10 @@ jobs:
             missing="${missing}SERVICE_ACCOUNT_EMAIL "
           fi
 
+          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            missing="${missing}ANTHROPIC_API_KEY "
+          fi
+
           if [ -z "${{ vars.CLOUDSDK_CORE_PROJECT }}" ]; then
             missing="${missing}CLOUDSDK_CORE_PROJECT "
           fi
@@ -56,7 +66,7 @@ jobs:
           if [ -n "$missing" ]; then
             echo "::error::Missing required configuration: $missing"
             echo "Please configure the following in repository settings:"
-            echo "  Secrets: RESEND_API_KEY, FROM_EMAIL, WORKLOAD_IDENTITY_PROVIDER, SERVICE_ACCOUNT_EMAIL"
+            echo "  Secrets: RESEND_API_KEY, FROM_EMAIL, WORKLOAD_IDENTITY_PROVIDER, SERVICE_ACCOUNT_EMAIL, ANTHROPIC_API_KEY"
             echo "  Variables: CLOUDSDK_CORE_PROJECT"
             exit 1
           fi
@@ -90,23 +100,105 @@ jobs:
         with:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.SERVICE_ACCOUNT_EMAIL }}
-          # Creates credentials file automatically
 
-      - name: Run Newsletter Script
+      - name: Fetch themes from Firestore
+        id: fetch-themes
+        env:
+          CLOUDSDK_CORE_PROJECT: ${{ vars.CLOUDSDK_CORE_PROJECT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+          SKIP_SCHEDULE_CHECK: ${{ inputs.skip_schedule_check }}
+        run: |
+          echo "Fetching themes from Firestore..."
+
+          # If skip_schedule_check is true, we'll modify behavior via env var
+          if [ "$SKIP_SCHEDULE_CHECK" = "true" ]; then
+            echo "Schedule check is disabled (manual override)"
+          fi
+
+          # Run fetch-themes and capture exit code
+          set +e
+          node dist/scripts/fetch-themes.js
+          exit_code=$?
+          set -e
+
+          if [ $exit_code -eq 2 ]; then
+            echo "No themes scheduled for today"
+            echo "has_themes=false" >> $GITHUB_OUTPUT
+          elif [ $exit_code -ne 0 ]; then
+            echo "Error fetching themes"
+            exit $exit_code
+          else
+            echo "Themes fetched:"
+            cat output/themes.json
+            echo "has_themes=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install Claude Code
+        if: steps.fetch-themes.outputs.has_themes == 'true'
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Generate newsletter with Claude Code
+        if: steps.fetch-themes.outputs.has_themes == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "Generating newsletter with Claude Code..."
+          THEMES=$(cat output/themes.json)
+          claude -p "/generate-newsletter $THEMES" > output/claude-output.txt
+          echo "Newsletter generation complete"
+          cat output/claude-output.txt
+
+      - name: Build HTML newsletter
+        if: steps.fetch-themes.outputs.has_themes == 'true'
+        run: |
+          echo "Building HTML newsletter..."
+          node dist/scripts/build-html.js
+
+      - name: Send newsletter
+        if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run != true
         env:
           CLOUDSDK_CORE_PROJECT: ${{ vars.CLOUDSDK_CORE_PROJECT }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
-          DRY_RUN: ${{ inputs.dry_run || 'false' }}
         run: |
-          echo "Starting newsletter generation..."
-          echo "Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-          echo "Project ID: $CLOUDSDK_CORE_PROJECT"
-          echo "Dry Run: $DRY_RUN"
-          echo "---"
+          echo "Sending newsletter..."
+          node dist/scripts/send-newsletter.js
 
-          npm start
+      - name: Update delivery timestamp
+        if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run != true
+        env:
+          CLOUDSDK_CORE_PROJECT: ${{ vars.CLOUDSDK_CORE_PROJECT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+        run: |
+          echo "Updating delivery timestamp..."
+          node dist/scripts/update-delivery-timestamp.js
+
+      - name: Dry run summary
+        if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run == true
+        run: |
+          echo "=== DRY RUN MODE ==="
+          echo "Newsletter was generated but not sent."
+          echo ""
+          echo "Generated content:"
+          cat output/newsletter.json
+          echo ""
+          echo "HTML preview saved to output/newsletter.html"
+
+      - name: No themes summary
+        if: steps.fetch-themes.outputs.has_themes == 'false'
+        run: |
+          echo "=== NO THEMES SCHEDULED ==="
+          echo "No themes are scheduled for delivery today."
+          echo "Use 'skip_schedule_check' option to override."
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: newsletter-output
+          path: output/
+          retention-days: 7
 
       - name: Log execution summary
         if: always()

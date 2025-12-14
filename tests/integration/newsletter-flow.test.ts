@@ -53,7 +53,7 @@ describe('Newsletter Flow Integration', () => {
     it('should complete full flow: fetch themes, generate content, send emails', async () => {
       // Setup: Mock theme data
       const themes: Theme[] = [
-        { id: 'tech-news', prompt: 'Latest technology news and innovations' }
+        { id: 'tech-news', title: 'Tech News', prompt: 'Latest technology news and innovations' }
       ];
 
       const subscribers: Subscriber[] = [
@@ -72,7 +72,7 @@ describe('Newsletter Flow Integration', () => {
         get: vi.fn().mockResolvedValue({
           docs: themes.map(t => ({
             id: t.id,
-            data: () => ({ prompt: t.prompt })
+            data: () => ({ title: t.title, prompt: t.prompt })
           }))
         }),
         doc: vi.fn().mockReturnValue({
@@ -163,8 +163,8 @@ describe('Newsletter Flow Integration', () => {
     it('should handle multiple themes with mixed success/failure', async () => {
       // Setup: Multiple themes
       const themes: Theme[] = [
-        { id: 'theme-success', prompt: 'Success theme prompt' },
-        { id: 'theme-fail', prompt: 'Fail theme prompt' }
+        { id: 'theme-success', title: 'Success', prompt: 'Success theme prompt' },
+        { id: 'theme-fail', title: 'Fail', prompt: 'Fail theme prompt' }
       ];
 
       // Configure Firestore for theme list
@@ -181,7 +181,7 @@ describe('Newsletter Flow Integration', () => {
         get: vi.fn().mockResolvedValue({
           docs: themes.map(t => ({
             id: t.id,
-            data: () => ({ prompt: t.prompt })
+            data: () => ({ title: t.title, prompt: t.prompt })
           }))
         }),
         doc: mockThemeDoc
@@ -248,16 +248,16 @@ describe('Newsletter Flow Integration', () => {
 
     it('should isolate failures and continue processing other themes', async () => {
       const themes: Theme[] = [
-        { id: 'first', prompt: 'First theme' },
-        { id: 'second', prompt: 'Second theme' },
-        { id: 'third', prompt: 'Third theme' }
+        { id: 'first', title: 'First', prompt: 'First theme' },
+        { id: 'second', title: 'Second', prompt: 'Second theme' },
+        { id: 'third', title: 'Third', prompt: 'Third theme' }
       ];
 
       mockFirestore.collection.mockReturnValue({
         get: vi.fn().mockResolvedValue({
           docs: themes.map(t => ({
             id: t.id,
-            data: () => ({ prompt: t.prompt })
+            data: () => ({ title: t.title, prompt: t.prompt })
           }))
         }),
         doc: vi.fn().mockReturnValue({

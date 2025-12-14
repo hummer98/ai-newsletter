@@ -34,7 +34,7 @@ describe('NewsletterGenerator', () => {
 
   describe('generateForTheme', () => {
     it('should generate newsletter content for a valid theme', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: 'Latest tech news' };
+      const theme: Theme = { id: 'theme-1', title: 'Tech News', prompt: 'Latest tech news' };
 
       mockWebSearchService.search.mockResolvedValue({
         results: [
@@ -65,7 +65,7 @@ describe('NewsletterGenerator', () => {
     });
 
     it('should fail when prompt is empty', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: '' };
+      const theme: Theme = { id: 'theme-1', title: 'Empty Theme', prompt: '' };
 
       generator = new NewsletterGenerator(
         mockFirestoreConnector as never,
@@ -76,12 +76,12 @@ describe('NewsletterGenerator', () => {
       const result = await generator.generateForTheme(theme);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('empty prompt');
+      expect(result.error).toContain('no prompt defined');
       expect(result.content).toBeUndefined();
     });
 
     it('should retry web search up to 3 times on failure', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: 'Tech news' };
+      const theme: Theme = { id: 'theme-1', title: 'Tech News', prompt: 'Tech news' };
 
       // Fail 3 times
       mockWebSearchService.search
@@ -103,7 +103,7 @@ describe('NewsletterGenerator', () => {
     });
 
     it('should succeed on retry if web search recovers', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: 'Tech news' };
+      const theme: Theme = { id: 'theme-1', title: 'Tech News', prompt: 'Tech news' };
 
       mockWebSearchService.search
         .mockRejectedValueOnce(new Error('Network error'))
@@ -130,7 +130,7 @@ describe('NewsletterGenerator', () => {
     });
 
     it('should fail when content generation fails', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: 'Tech news' };
+      const theme: Theme = { id: 'theme-1', title: 'Tech News', prompt: 'Tech news' };
 
       mockWebSearchService.search.mockResolvedValue({
         results: [{ title: 'News', snippet: 'Desc', url: 'https://example.com' }]
@@ -151,7 +151,7 @@ describe('NewsletterGenerator', () => {
     });
 
     it('should fail when web search returns no results', async () => {
-      const theme: Theme = { id: 'theme-1', prompt: 'Very obscure topic' };
+      const theme: Theme = { id: 'theme-1', title: 'Obscure', prompt: 'Very obscure topic' };
 
       mockWebSearchService.search.mockResolvedValue({
         results: []
@@ -173,8 +173,8 @@ describe('NewsletterGenerator', () => {
   describe('generateAll', () => {
     it('should process all themes and return results', async () => {
       const themes: Theme[] = [
-        { id: 'theme-1', prompt: 'Tech news' },
-        { id: 'theme-2', prompt: 'Sports news' }
+        { id: 'theme-1', title: 'Tech', prompt: 'Tech news' },
+        { id: 'theme-2', title: 'Sports', prompt: 'Sports news' }
       ];
 
       mockFirestoreConnector.getThemes.mockResolvedValue(themes);
@@ -205,8 +205,8 @@ describe('NewsletterGenerator', () => {
 
     it('should continue processing when one theme fails', async () => {
       const themes: Theme[] = [
-        { id: 'theme-1', prompt: 'Tech news' },
-        { id: 'theme-2', prompt: 'Sports news' }
+        { id: 'theme-1', title: 'Tech', prompt: 'Tech news' },
+        { id: 'theme-2', title: 'Sports', prompt: 'Sports news' }
       ];
 
       mockFirestoreConnector.getThemes.mockResolvedValue(themes);

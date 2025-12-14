@@ -26,7 +26,7 @@ export class FirestoreConnector {
 
   /**
    * Get all themes from Firestore
-   * Only returns themes with valid prompt fields
+   * Only returns themes with valid title and prompt fields
    */
   async getThemes(): Promise<Theme[]> {
     try {
@@ -35,12 +35,15 @@ export class FirestoreConnector {
 
       for (const doc of snapshot.docs) {
         const data = doc.data();
+        const title = data.title;
         const prompt = data.prompt;
 
-        // Skip themes without valid prompt
-        if (typeof prompt === 'string' && prompt.length > 0) {
+        // Skip themes without valid title and prompt
+        if (typeof title === 'string' && title.length > 0 &&
+            typeof prompt === 'string' && prompt.length > 0) {
           themes.push({
             id: doc.id,
+            title: title,
             prompt: prompt
           });
         }
@@ -55,7 +58,7 @@ export class FirestoreConnector {
 
   /**
    * Get a single theme by ID
-   * Returns null if theme doesn't exist or has no valid prompt
+   * Returns null if theme doesn't exist or has no valid title/prompt
    */
   async getThemeById(themeId: string): Promise<Theme | null> {
     try {
@@ -66,15 +69,18 @@ export class FirestoreConnector {
       }
 
       const data = doc.data();
+      const title = data?.title;
       const prompt = data?.prompt;
 
-      // Return null if prompt is missing or empty
-      if (typeof prompt !== 'string' || prompt.length === 0) {
+      // Return null if title or prompt is missing or invalid
+      if (typeof title !== 'string' || title.length === 0 ||
+          typeof prompt !== 'string' || prompt.length === 0) {
         return null;
       }
 
       return {
         id: doc.id,
+        title: title,
         prompt: prompt
       };
     } catch (error) {

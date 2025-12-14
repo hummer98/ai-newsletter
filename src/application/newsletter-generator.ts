@@ -76,9 +76,12 @@ export class NewsletterGenerator {
       return {
         themeId: theme.id,
         success: false,
-        error: `Theme ${theme.id} has empty prompt`
+        error: `Theme ${theme.id} has no prompt defined`
       };
     }
+
+    // Use prompt as search query (extract key terms)
+    const searchQuery = theme.prompt;
 
     // Execute web search with retries
     let searchResponse: SearchResponse | null = null;
@@ -86,7 +89,7 @@ export class NewsletterGenerator {
 
     for (let attempt = 1; attempt <= MAX_RETRY_COUNT; attempt++) {
       try {
-        searchResponse = await this.webSearchService.search(theme.prompt);
+        searchResponse = await this.webSearchService.search(searchQuery);
         break;
       } catch (error) {
         lastError = error instanceof Error ? error.message : 'Unknown error';
@@ -117,7 +120,7 @@ export class NewsletterGenerator {
 
     // Generate content
     try {
-      const content = await this.contentGenerator.generate(theme.prompt, searchResponse.results);
+      const content = await this.contentGenerator.generate(theme.title, searchResponse.results);
 
       return {
         themeId: theme.id,

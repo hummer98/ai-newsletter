@@ -34,8 +34,8 @@ describe('FirestoreConnector', () => {
   describe('getThemes', () => {
     it('should return all themes from Firestore', async () => {
       const mockThemes = [
-        { id: 'theme-1', data: () => ({ prompt: 'Tech news prompt' }) },
-        { id: 'theme-2', data: () => ({ prompt: 'Sports news prompt' }) }
+        { id: 'theme-1', data: () => ({ title: 'Tech News', prompt: 'Tech news prompt' }) },
+        { id: 'theme-2', data: () => ({ title: 'Sports News', prompt: 'Sports news prompt' }) }
       ];
 
       mockCollection.mockReturnValue({
@@ -48,8 +48,8 @@ describe('FirestoreConnector', () => {
       const themes = await connector.getThemes();
 
       expect(themes).toHaveLength(2);
-      expect(themes[0]).toEqual({ id: 'theme-1', prompt: 'Tech news prompt' });
-      expect(themes[1]).toEqual({ id: 'theme-2', prompt: 'Sports news prompt' });
+      expect(themes[0]).toEqual({ id: 'theme-1', title: 'Tech News', prompt: 'Tech news prompt' });
+      expect(themes[1]).toEqual({ id: 'theme-2', title: 'Sports News', prompt: 'Sports news prompt' });
       expect(mockCollection).toHaveBeenCalledWith('themes');
     });
 
@@ -78,9 +78,9 @@ describe('FirestoreConnector', () => {
 
     it('should skip themes without prompt field', async () => {
       const mockThemes = [
-        { id: 'theme-1', data: () => ({ prompt: 'Valid prompt' }) },
-        { id: 'theme-2', data: () => ({}) }, // No prompt
-        { id: 'theme-3', data: () => ({ prompt: '' }) } // Empty prompt
+        { id: 'theme-1', data: () => ({ title: 'Valid', prompt: 'Valid prompt' }) },
+        { id: 'theme-2', data: () => ({ title: 'No prompt' }) }, // No prompt
+        { id: 'theme-3', data: () => ({ title: 'Empty prompt', prompt: '' }) } // Empty prompt
       ];
 
       mockCollection.mockReturnValue({
@@ -102,7 +102,7 @@ describe('FirestoreConnector', () => {
       const mockDocSnapshot = {
         exists: true,
         id: 'theme-1',
-        data: () => ({ prompt: 'Tech news prompt' })
+        data: () => ({ title: 'Tech News', prompt: 'Tech news prompt' })
       };
 
       mockCollection.mockReturnValue({
@@ -114,7 +114,7 @@ describe('FirestoreConnector', () => {
       connector = new FirestoreConnector(mockFirestore as never);
       const theme = await connector.getThemeById('theme-1');
 
-      expect(theme).toEqual({ id: 'theme-1', prompt: 'Tech news prompt' });
+      expect(theme).toEqual({ id: 'theme-1', title: 'Tech News', prompt: 'Tech news prompt' });
     });
 
     it('should return null when theme does not exist', async () => {
