@@ -31,3 +31,10 @@ coverage/
 *.json.key
 credentials.json
 service-account*.json
+
+# Generated output (temporary files)
+/claude-output.txt
+/newsletter.html
+/newsletter.json
+/newsletter.txt
+/themes.json
