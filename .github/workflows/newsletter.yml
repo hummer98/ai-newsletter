@@ -147,6 +147,13 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
         run: |
           echo "Generating newsletter with Claude Code..."
+
+          # Calculate date range (last 7 days)
+          export END_DATE=$(date -u +"%Y-%m-%d")
+          export START_DATE=$(date -u -d "7 days ago" +"%Y-%m-%d" 2>/dev/null || date -u -v-7d +"%Y-%m-%d")
+
+          echo "Date range: ${START_DATE} to ${END_DATE}"
+
           THEMES=$(cat output/themes.json)
           claude -p "/generate-newsletter $THEMES" > output/claude-output.txt
           echo "Newsletter generation complete"
