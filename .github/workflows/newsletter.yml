@@ -140,7 +140,7 @@ jobs:
       - name: Generate newsletter with Claude Code
         if: steps.fetch-themes.outputs.has_themes == 'true'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           echo "Generating newsletter with Claude Code..."
           THEMES=$(cat output/themes.json)
