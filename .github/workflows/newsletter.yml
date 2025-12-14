@@ -55,8 +55,9 @@ jobs:
             missing="${missing}SERVICE_ACCOUNT_EMAIL "
           fi
 
-          if [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
-            missing="${missing}ANTHROPIC_API_KEY "
+          # Check that at least one authentication method is set
+          if [ -z "${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}" ] && [ -z "${{ secrets.ANTHROPIC_API_KEY }}" ]; then
+            missing="${missing}CLAUDE_CODE_OAUTH_TOKEN_or_ANTHROPIC_API_KEY "
           fi
 
           if [ -z "${{ vars.CLOUDSDK_CORE_PROJECT }}" ]; then
@@ -66,7 +67,8 @@ jobs:
           if [ -n "$missing" ]; then
             echo "::error::Missing required configuration: $missing"
             echo "Please configure the following in repository settings:"
-            echo "  Secrets: RESEND_API_KEY, FROM_EMAIL, WORKLOAD_IDENTITY_PROVIDER, SERVICE_ACCOUNT_EMAIL, ANTHROPIC_API_KEY"
+            echo "  Secrets: RESEND_API_KEY, FROM_EMAIL, WORKLOAD_IDENTITY_PROVIDER, SERVICE_ACCOUNT_EMAIL"
+            echo "  Authentication (choose one): CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY"
             echo "  Variables: CLOUDSDK_CORE_PROJECT"
             exit 1
           fi
