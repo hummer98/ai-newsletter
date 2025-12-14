@@ -55,7 +55,15 @@ source .env
 3. Create an API key from the [API Keys](https://resend.com/api-keys) section
 4. Set `RESEND_API_KEY` and `FROM_EMAIL` in `.env`
 
-### 4. GCP Workload Identity Federation Setup
+### 4. Anthropic API Setup
+
+1. Sign up at [Anthropic Console](https://console.anthropic.com/)
+2. Create an API key from the [API Keys](https://console.anthropic.com/settings/keys) section
+3. Set `ANTHROPIC_API_KEY` in `.env`
+
+This key is used by Claude Code to generate newsletter content in GitHub Actions.
+
+### 5. GCP Workload Identity Federation Setup
 
 Configure Workload Identity Federation for GitHub Actions to access GCP resources.
 
@@ -105,7 +113,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $CLOUDSDK_CORE_PROJECT --format='value(projectNumber)')/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/${GITHUB_REPO}"
 ```
 
-### 5. Create Firestore Data
+### 6. Create Firestore Data
 
 #### Install Sample Data (Recommended)
 
@@ -132,7 +140,7 @@ themes/
                     └── mailto: string  # Subscriber email address
 ```
 
-### 6. Register GitHub Secrets/Variables
+### 7. Register GitHub Secrets/Variables
 
 Run the setup script for batch registration:
 
@@ -156,6 +164,7 @@ Configure the following in repository Settings > Secrets and variables > Actions
 |------|-------------|
 | `RESEND_API_KEY` | Resend API key |
 | `FROM_EMAIL` | Sender email address |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude Code |
 | `WORKLOAD_IDENTITY_PROVIDER` | Full path of WIF provider |
 | `SERVICE_ACCOUNT_EMAIL` | Service account email |
 

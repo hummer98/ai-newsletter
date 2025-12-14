@@ -55,7 +55,15 @@ source .env
 3. [API Keys](https://resend.com/api-keys) から API キーを作成
 4. `.env` の `RESEND_API_KEY` と `FROM_EMAIL` を設定
 
-### 4. GCP Workload Identity Federation の設定
+### 4. Anthropic API のセットアップ
+
+1. [Anthropic Console](https://console.anthropic.com/) にサインアップ
+2. [API Keys](https://console.anthropic.com/settings/keys) から API キーを作成
+3. `.env` の `ANTHROPIC_API_KEY` を設定
+
+このキーはGitHub ActionsでClaude Codeがニュースレターコンテンツを生成する際に使用されます。
+
+### 5. GCP Workload Identity Federation の設定
 
 GitHub ActionsからGCPリソースにアクセスするために、Workload Identity Federationを設定します。
 
@@ -105,7 +113,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $CLOUDSDK_CORE_PROJECT --format='value(projectNumber)')/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/${GITHUB_REPO}"
 ```
 
-### 5. Firestoreデータの作成
+### 6. Firestoreデータの作成
 
 #### サンプルデータのインストール（推奨）
 
@@ -132,7 +140,7 @@ themes/
                     └── mailto: string  # 購読者のメールアドレス
 ```
 
-### 6. GitHub Secrets/Variables の登録
+### 7. GitHub Secrets/Variables の登録
 
 セットアップスクリプトを実行して一括登録：
 
@@ -156,6 +164,7 @@ themes/
 |------|-------------|
 | `RESEND_API_KEY` | Resend APIキー |
 | `FROM_EMAIL` | 送信元メールアドレス |
+| `ANTHROPIC_API_KEY` | Claude Code用のAnthropic APIキー |
 | `WORKLOAD_IDENTITY_PROVIDER` | WIF プロバイダーの完全パス |
 | `SERVICE_ACCOUNT_EMAIL` | サービスアカウントのメール |
 

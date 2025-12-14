@@ -18,6 +18,7 @@ required_vars=(
   "SERVICE_ACCOUNT_NAME"
   "RESEND_API_KEY"
   "FROM_EMAIL"
+  "ANTHROPIC_API_KEY"
 )
 
 for var in "${required_vars[@]}"; do
@@ -46,6 +47,7 @@ echo "  WORKLOAD_IDENTITY_PROVIDER: $WORKLOAD_IDENTITY_PROVIDER"
 echo "  SERVICE_ACCOUNT_EMAIL: $SERVICE_ACCOUNT_EMAIL"
 echo "  FROM_EMAIL: $FROM_EMAIL"
 echo "  RESEND_API_KEY: (hidden)"
+echo "  ANTHROPIC_API_KEY: (hidden)"
 echo ""
 
 read -p "Continue? (y/N): " confirm
@@ -64,6 +66,7 @@ gh secret set WORKLOAD_IDENTITY_PROVIDER --body "$WORKLOAD_IDENTITY_PROVIDER"
 gh secret set SERVICE_ACCOUNT_EMAIL --body "$SERVICE_ACCOUNT_EMAIL"
 gh secret set RESEND_API_KEY --body "$RESEND_API_KEY"
 gh secret set FROM_EMAIL --body "$FROM_EMAIL"
+gh secret set ANTHROPIC_API_KEY --body "$ANTHROPIC_API_KEY"
 
 echo ""
 echo "Done! GitHub Secrets and Variables have been set."
