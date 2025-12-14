@@ -11,7 +11,7 @@ on:
       dry_run:
         description: 'Run in dry-run mode (no emails sent)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 # Required permissions for Workload Identity Federation
