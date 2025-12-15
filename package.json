@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "lint": "eslint src tests --ext .ts",
     "install:ainews": "npx tsx scripts/install-ainews-example.ts",
+    "install:marine": "npx tsx scripts/install-marine-themes.ts",
     "fetch-themes": "npx tsx scripts/fetch-themes.ts",
     "build-html": "npx tsx scripts/build-html.ts",
     "send-newsletter": "npx tsx scripts/send-newsletter.ts",

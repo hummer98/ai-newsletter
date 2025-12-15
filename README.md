@@ -138,6 +138,19 @@ This script creates:
 - Theme: `ai-coding-agents` (latest news about AI coding agents)
 - Subscriber: automatically retrieves email from git config user.email
 
+Install marine technology newsletter theme:
+
+```bash
+npm run install:marine
+```
+
+This script creates a single weekly newsletter covering:
+- AI navigation systems for small boats
+- Marine equipment and electronics
+- Regulations and legal updates for electric boats
+- Subscriber: automatically retrieves email from git config user.email
+- Schedule: Every Monday
+
 #### Data Structure
 
 Firestore data structure:
