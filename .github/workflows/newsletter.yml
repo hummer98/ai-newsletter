@@ -139,26 +139,24 @@ jobs:
         if: steps.fetch-themes.outputs.has_themes == 'true'
         run: npm install -g @anthropic-ai/claude-code
 
-      - name: Generate newsletter with Claude Code
+      - name: Generate newsletters with Claude Code
         if: steps.fetch-themes.outputs.has_themes == 'true'
         env:
           # Use OAuth Token if available, otherwise fall back to API Key
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || '' }}
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN || '' }}
         run: |
-          echo "Generating newsletter with Claude Code..."
-          THEMES=$(cat output/themes.json)
-          claude -p "/generate-newsletter $THEMES" > output/claude-output.txt
+          echo "Generating newsletters with Claude Code..."
+          node dist/scripts/generate-newsletters.js
           echo "Newsletter generation complete"
-          cat output/claude-output.txt
 
-      - name: Build HTML newsletter
+      - name: Build HTML newsletters
         if: steps.fetch-themes.outputs.has_themes == 'true'
         run: |
-          echo "Building HTML newsletter..."
+          echo "Building HTML newsletters..."
           node dist/scripts/build-html.js
 
-      - name: Send newsletter
+      - name: Send newsletters
         if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run != true
         env:
           CLOUDSDK_CORE_PROJECT: ${{ vars.CLOUDSDK_CORE_PROJECT }}
@@ -166,7 +164,7 @@ jobs:
           FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
           GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
         run: |
-          echo "Sending newsletter..."
+          echo "Sending newsletters..."
           node dist/scripts/send-newsletter.js
 
       - name: Update delivery timestamp
@@ -182,12 +180,17 @@ jobs:
         if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run == true
         run: |
           echo "=== DRY RUN MODE ==="
-          echo "Newsletter was generated but not sent."
+          echo "Newsletters were generated but not sent."
           echo ""
-          echo "Generated content:"
-          cat output/newsletter.json
+          echo "Generated files:"
+          ls -la output/newsletter-*.json output/newsletter-*.html
           echo ""
-          echo "HTML preview saved to output/newsletter.html"
+          echo "Content preview:"
+          for file in output/newsletter-*.json; do
+            echo "--- $(basename $file) ---"
+            cat "$file"
+            echo ""
+          done
 
       - name: No themes summary
         if: steps.fetch-themes.outputs.has_themes == 'false'

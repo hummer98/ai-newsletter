@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 interface NewsletterData {
+  themeId: string;
   title: string;
   date: string;
   summary: string;
@@ -62,19 +63,7 @@ async function main(): Promise<void> {
     throw new Error('FROM_EMAIL environment variable is required');
   }
 
-  // Load newsletter content
   const outputDir = path.join(process.cwd(), 'output');
-  const jsonPath = path.join(outputDir, 'newsletter.json');
-  const htmlPath = path.join(outputDir, 'newsletter.html');
-  const textPath = path.join(outputDir, 'newsletter.txt');
-
-  if (!fs.existsSync(jsonPath) || !fs.existsSync(htmlPath)) {
-    throw new Error('Newsletter files not found. Run build-html first.');
-  }
-
-  const data: NewsletterData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-  const htmlBody = fs.readFileSync(htmlPath, 'utf-8');
-  const textBody = fs.existsSync(textPath) ? fs.readFileSync(textPath, 'utf-8') : '';
 
   // Load themes to get theme IDs
   const themesPath = path.join(outputDir, 'themes.json');
@@ -97,12 +86,27 @@ async function main(): Promise<void> {
   let totalFailed = 0;
 
   for (const theme of themes) {
-    console.log(`[SendNewsletter] Processing theme: ${theme.id}`);
+    console.log(`\n[SendNewsletter] Processing theme: ${theme.title} (${theme.id})`);
+
+    // Load newsletter content for this theme
+    const jsonPath = path.join(outputDir, `newsletter-${theme.id}.json`);
+    const htmlPath = path.join(outputDir, `newsletter-${theme.id}.html`);
+    const textPath = path.join(outputDir, `newsletter-${theme.id}.txt`);
+
+    if (!fs.existsSync(jsonPath) || !fs.existsSync(htmlPath)) {
+      console.error(`[SendNewsletter] Newsletter files not found for theme ${theme.id}. Skipping.`);
+      continue;
+    }
+
+    const data: NewsletterData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+    const htmlBody = fs.readFileSync(htmlPath, 'utf-8');
+    const textBody = fs.existsSync(textPath) ? fs.readFileSync(textPath, 'utf-8') : '';
 
     const subscribers = await getSubscribersForTheme(firestore, theme.id);
     console.log(`[SendNewsletter] Found ${subscribers.length} subscriber(s)`);
 
     if (subscribers.length === 0) {
+      console.log(`[SendNewsletter] No subscribers for theme ${theme.id}. Skipping.`);
       continue;
     }
 
@@ -141,7 +145,7 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log(`[SendNewsletter] Delivery complete. Sent: ${totalSent}, Failed: ${totalFailed}`);
+  console.log(`\n[SendNewsletter] Delivery complete. Sent: ${totalSent}, Failed: ${totalFailed}`);
 }
 
 main().catch((error) => {

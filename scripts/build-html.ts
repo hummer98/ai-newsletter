@@ -10,6 +10,7 @@ interface Article {
 }
 
 interface NewsletterData {
+  themeId: string;
   title: string;
   date: string;
   summary: string;
@@ -143,29 +144,54 @@ function buildTextBody(data: NewsletterData): string {
 }
 
 async function main(): Promise<void> {
-  console.log('[BuildHtml] Building HTML newsletter...');
+  console.log('[BuildHtml] Building HTML newsletters...');
 
   const outputDir = path.join(process.cwd(), 'output');
-  const jsonPath = path.join(outputDir, 'newsletter.json');
 
-  if (!fs.existsSync(jsonPath)) {
-    throw new Error(`Newsletter JSON not found: ${jsonPath}`);
+  // Find all newsletter JSON files
+  const files = fs.readdirSync(outputDir);
+  const newsletterFiles = files.filter(f => f.startsWith('newsletter-') && f.endsWith('.json'));
+
+  if (newsletterFiles.length === 0) {
+    throw new Error('No newsletter JSON files found in output directory');
   }
 
-  const data: NewsletterData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
-  console.log(`[BuildHtml] Processing newsletter: ${data.title}`);
+  console.log(`[BuildHtml] Found ${newsletterFiles.length} newsletter(s) to process`);
 
-  // Build HTML
-  const html = buildNewsletterHtml(data);
-  const htmlPath = path.join(outputDir, 'newsletter.html');
-  fs.writeFileSync(htmlPath, html);
-  console.log(`[BuildHtml] HTML saved to ${htmlPath}`);
+  let successCount = 0;
+  let failCount = 0;
 
-  // Build text version
-  const text = buildTextBody(data);
-  const textPath = path.join(outputDir, 'newsletter.txt');
-  fs.writeFileSync(textPath, text);
-  console.log(`[BuildHtml] Text saved to ${textPath}`);
+  for (const file of newsletterFiles) {
+    try {
+      const jsonPath = path.join(outputDir, file);
+      const data: NewsletterData = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+
+      console.log(`[BuildHtml] Processing newsletter: ${data.title} (${data.themeId})`);
+
+      // Build HTML
+      const html = buildNewsletterHtml(data);
+      const htmlPath = path.join(outputDir, `newsletter-${data.themeId}.html`);
+      fs.writeFileSync(htmlPath, html);
+      console.log(`[BuildHtml] HTML saved to ${htmlPath}`);
+
+      // Build text version
+      const text = buildTextBody(data);
+      const textPath = path.join(outputDir, `newsletter-${data.themeId}.txt`);
+      fs.writeFileSync(textPath, text);
+      console.log(`[BuildHtml] Text saved to ${textPath}`);
+
+      successCount++;
+    } catch (error) {
+      console.error(`[BuildHtml] Failed to process ${file}:`, error instanceof Error ? error.message : error);
+      failCount++;
+    }
+  }
+
+  console.log(`[BuildHtml] Build complete. Success: ${successCount}, Failed: ${failCount}`);
+
+  if (failCount > 0) {
+    process.exit(1);
+  }
 }
 
 main().catch((error) => {
