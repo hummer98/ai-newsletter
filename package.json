@@ -1,6 +1,6 @@
 {
   "name": "ai-newsletter",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "AI-powered automated newsletter system using GitHub Actions",
   "main": "dist/src/index.js",
   "type": "module",
