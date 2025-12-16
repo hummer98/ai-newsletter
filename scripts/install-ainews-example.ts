@@ -2,7 +2,7 @@ import { Firestore } from '@google-cloud/firestore';
 import { execSync } from 'child_process';
 
 const THEME_TITLE = 'AIコーディングエージェント最新動向';
-const THEME_SCHEDULE = 'weekly:sunday'; // Every Sunday
+const THEME_SCHEDULE = 'weekly:monday'; // Every Monday
 const THEME_PROMPT = `{{period}}のAIコーディングエージェント（GitHub Copilot、Cursor、Claude Code、Cline、Devin等）に関する最新ニュースを収集してください。
 
 対象トピック:
@@ -68,7 +68,7 @@ async function main(): Promise<void> {
   console.log(`                └── ${subscriberId}/`);
   console.log(`                      └── mailto: "${subscriberEmail}"`);
   console.log(`\nSchedule formats supported:`);
-  console.log(`  - weekly:monday    (every Monday)`);
+  console.log(`  - weekly:monday    (every Monday) ← current setting`);
   console.log(`  - weekly:sunday    (every Sunday)`);
   console.log(`  - biweekly:monday  (every other Monday)`);
   console.log(`  - monthly:1,15     (1st and 15th of each month)`);
