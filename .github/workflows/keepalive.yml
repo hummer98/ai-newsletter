@@ -1,0 +1,45 @@
+name: Keepalive
+
+# Prevents GitHub from auto-disabling scheduled workflows after 60 days
+# of repository inactivity. Pushes a tiny timestamp bump on the 1st of
+# every month so the inactivity timer resets, and re-enables the
+# newsletter workflow as a safety net in case it was already disabled.
+
+on:
+  schedule:
+    - cron: '0 12 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump keepalive timestamp
+        run: |
+          mkdir -p .github
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .github/keepalive-timestamp
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/keepalive-timestamp
+          if git diff --quiet --cached; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: keepalive"
+            git push
+          fi
+
+      - name: Re-enable scheduled workflows as a safety net
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh workflow enable newsletter.yml || true
+          gh workflow enable keepalive.yml || true
