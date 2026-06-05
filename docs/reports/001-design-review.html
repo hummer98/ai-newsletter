@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Design Review 001 — Discord チャンネル配信</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:880px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:28px}
+  h3{font-size:15px;margin-top:18px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:10px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top;font-size:13.5px}
+  th{background:#f7f8fa}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+  .b{color:#b91c1c;font-weight:700}
+  .m{color:#c2410c;font-weight:700}
+  .n{color:#a16207;font-weight:700}
+  .ok{color:#15803d;font-weight:700}
+  li{margin:6px 0}
+</style>
+</head>
+<body>
+<h1>Design Review 001 — Discord チャンネル配信</h1>
+<p class="meta"><strong>Reviewer</strong>: design-reviewer（独立コンテキスト）&nbsp;·&nbsp;
+   <strong>Plan</strong>: <code>docs/plans/001-discord-delivery.html</code> (AC1–AC7) &nbsp;·&nbsp;
+   <strong>ADR</strong>: <code>docs/adr/001-discord-delivery.html</code> &nbsp;·&nbsp;
+   <strong>判定</strong>: <span class="m">条件付き GO</span>（Must-fix を T3/T4 着手前に反映）</p>
+
+<blockquote>前提として扱う lead 裁定: (a) 部分失敗時 <code>post-to-discord</code> は exit 非ゼロ・workflow は continue-on-error、(b) チャンク連番プレフィックスは付けない。この2点は再議しない。</blockquote>
+
+<h2>総評</h2>
+<p>全体設計は既存 <code>EmailSender</code> パターン（クラス + 結果型 + 純粋分割関数 + 429 リトライ + <code>delay()</code>）を正しく踏襲しており、構成・分離・所有マップは健全。新規依存ゼロ・global fetch の判断も妥当。ただし<strong>分割アルゴリズムの契約に検証不能・自己矛盾する箇所</strong>と、<strong>workflow 条件式の不整合</strong>、<strong>2件の AC の検証可能性の穴</strong>があり、これらは実装前に潰す必要がある。</p>
+
+<h2>観点別サマリ</h2>
+<table>
+  <tr><th>#</th><th>観点</th><th>判定</th><th>要点</th></tr>
+  <tr><td>1</td><td>AC1–AC7 の検証可能性</td><td class="m">⚠️</td><td>AC2 の「強制分割」「空配列」と AC5 の workflow 条件に検証上の穴。残りは検証可能。</td></tr>
+  <tr><td>2</td><td>splitIntoMessages 境界網羅</td><td class="b">❌</td><td>Decision 2 の規約に <strong>自己矛盾（join 復元 vs 末尾改行温存 vs 空 chunk 禁止）</strong>と未定義ケースあり。Must-fix。</td></tr>
+  <tr><td>3</td><td>429 以外のエラー設計</td><td class="ok">✅</td><td>401/403/404/5xx/network の方針は妥当。テスト要件のみ明文化を推奨。</td></tr>
+  <tr><td>4</td><td>workflow 配置 / validate-config</td><td class="m">⚠️</td><td>token 非必須化は妥当。ただし <code>continue-on-error</code> の効果と <code>dry_run</code> 条件式に注意点。</td></tr>
+  <tr><td>5</td><td>後方互換（channelId 省略）</td><td class="ok">✅</td><td>spread 条件付与で key 省略・skip 判定は安全。問題なし。</td></tr>
+  <tr><td>6</td><td>テスト容易性（fetch モック）</td><td class="m">⚠️</td><td>global fetch を <code>vi.stubGlobal</code> でモックする方針が ADR に未記載。retry_after 待機のテスト戦略も欠落。</td></tr>
+</table>
+
+<h2 class="b">Must-fix（実装着手前に解消）</h2>
+
+<h3>M1 <span class="b">[blocker]</span> 分割アルゴリズムの規約が自己矛盾しており、テスト不能</h3>
+<p>ADR Decision 2 は次を同時に要求しているが、これらは両立しない:</p>
+<ul>
+  <li>項7「<code>chunks.join('') === text</code>（または末尾改行差のみ）」</li>
+  <li>項2「各行に <code>'\n'</code> を再付与して結合」</li>
+  <li>項5「末尾改行は温存してよいが、それだけの空 chunk は作らない」「各 chunk は trim せず原文を保つ」</li>
+  <li>項6「空 chunk を出力しない / 各 chunk は <code>1 ≤ length ≤ limit</code>」</li>
+</ul>
+<p>問題点を具体例で示す:</p>
+<ol>
+  <li><strong>末尾改行なし入力で join が壊れる。</strong> <code>text = "a\nb"</code> を <code>split('\n')</code> すると <code>["a","b"]</code>。各行に <code>'\n'</code> を再付与すると <code>"a\n" + "b\n"</code> = <code>"a\nb\n"</code> となり、<code>join('') === text</code> が<strong>成立しない</strong>（末尾に余分な <code>\n</code>）。「再付与」を最終行はしない、という例外が規約に書かれていない。サンプル <code>output/newsletter-*.txt</code> は<strong>末尾改行なし</strong>（最終行「このニュースレターは…」で EOF）なので、この差分は実データで必ず発生する。</li>
+  <li><strong>連続改行（空行）の扱いが未定義。</strong> サンプル本文は段落間が <code>\n\n</code> で区切られている。<code>"a\n\nb".split('\n')</code> = <code>["a","","b"]</code>。空行 <code>""</code> に <code>'\n'</code> を再付与すると <code>"\n"</code>（length 1）。これは「空 chunk 禁止」には抵触しないが、貪欲結合のバッファ内に積まれる前提なのか、それとも単独で flush され得るのかが規約から読めない。境界（空行がちょうど limit 直後に来る）でバッファ flush されると <code>\n</code> 単独 chunk が生じ、項6/項7と衝突しうる。</li>
+  <li><strong>「<code>1 ≤ length ≤ limit</code>」と「強制スライス」の境界。</strong> 単一行が <code>limit</code> ちょうど（=limit）の場合、項3「足すと limit を<em>超える</em>なら flush」では超えないので 1 chunk に収まるが、再付与した <code>'\n'</code> を含めると <code>limit+1</code> になる。<code>limit</code> ちょうどの行 / <code>limit+1</code> の行 / <code>limit</code> ちょうどのバッファ、の3境界でオフバイワンが起きやすい。規約は「行 + 改行 で判定」と書くが、強制スライス（項4）は <code>slice(0,limit)</code> で<strong>改行を含めず</strong> limit 単位、と非対称。チャンク実長が <code>limit</code> を超えないことを、改行付与込みで保証する明示が必要。</li>
+</ol>
+<p><strong>提案する確定規約（差し替え）:</strong></p>
+<ul>
+  <li>復元契約を <strong><code>chunks.join('') === text</code> を厳密一致</strong>に固定する（「末尾改行差のみ許容」という曖昧条項を削除）。これを満たすには「行に <code>'\n'</code> 再付与」ではなく、<strong>元テキストを区切り位置で <code>slice</code> して連結が原文に一致する」方式に統一する（区切り文字 <code>\n</code> を後続 chunk 側に含めるか前 chunk 側に含めるかを1つに固定）。最も単純で検証しやすいのは「<code>\n</code> は直前の行の末尾に残す。最終行には付与しない」= <code>text.split('\n')</code> 後、<code>index < last</code> の行のみ <code>+ '\n'</code>。</li>
+  <li>各 chunk の実長判定は「<strong>改行付与後の文字列長</strong>」で行い <code>≤ limit</code> を保証。強制スライスも同じ実長基準にする。</li>
+  <li>空行（<code>""</code> → 再付与で <code>"\n"</code>）は単独 flush せず必ずバッファに連結する、と明記。</li>
+  <li>テストに「<strong>ランダム/代表テキストで <code>join('') === text</code> を property 的に確認</strong>」を1ケース必須化し、サンプル <code>output/newsletter-kSmyXNiKZDznRMGx4G9c.txt</code>（末尾改行なし・<code>\n\n</code> 段落・URL 行）を実フィクスチャに採用する。</li>
+</ul>
+
+<h3>M2 <span class="b">[blocker]</span> AC2「空入力 → 空配列」と post() の整合が未検証ライン</h3>
+<p>ADR 項1は <code>text === ''</code> で <code>[]</code>、post() は空配列なら「送信0件・success 扱い」。だが Discord API は<strong>空 content の POST を 400 で拒否</strong>する。実害は「txt が空文字のテーマ」で post() が成功扱いになり、運用上は無送信が成功に化ける点。<code>build-html</code>/<code>generate</code> が空 txt を出すケース（生成失敗で空ファイル）が現実にあり得る。<br>
+<strong>提案:</strong> AC2 に「空入力 = 空配列 = POST を一切発行しない」ことを明示し、post() の <code>DiscordPostResult</code> で <code>totalChunks: 0</code> を返す。さらに <code>post-to-discord.ts</code> 側で「txt が空（または空白のみ）のテーマは <em>warn ログ + skip</em>」を AC4 の契約に追加する（成功と誤認させない）。テストで「空文字で fetch が0回呼ばれる」を assert。</p>
+
+<h3>M3 <span class="m">[major]</span> AC5 / workflow の条件式が既存記法と不整合・continue-on-error の効果が限定的</h3>
+<ul>
+  <li><strong>条件式:</strong> AC5 は「<code>has_themes==true</code> かつ <code>dry_run!=true</code>」。既存 workflow の Send ステップは <code>if: steps.fetch-themes.outputs.has_themes == 'true' &amp;&amp; inputs.dry_run != true</code>（<code>has_themes</code> は<strong>文字列 <code>'true'</code></strong> 比較、step output 経由）。Discord ステップも<strong>同一の文字列比較・同一 step 参照</strong>を使うこと、を AC5/ADR に固定で書く。<code>== true</code>（bool）と <code>== 'true'</code>（str）の取り違えは GA で頻出のサイレント不発バグ。T4 への明示指示が必要。</li>
+  <li><strong>continue-on-error の射程:</strong> <code>continue-on-error: true</code> は「後続ステップを止めない」だけで、<strong>ジョブ全体の結論は success</strong> になる（失敗が緑で隠れる）。lead 裁定「exit 非ゼロで可視化」の意図は、<code>continue-on-error</code> 単独では達成されない（赤くならない）。可視化したいなら GA の<strong>annotation（<code>::error::</code> 出力）</strong>を post-to-discord 側で必ず吐くか、ステップに <code>id</code> を付けて後続の summary ステップで <code>steps.&lt;id&gt;.outcome == 'failure'</code> を拾い <code>::warning::</code> を出す設計を AC5 に足すこと。現状の AC5 文面では「非ゼロにしたのに誰も気づかない」になる。</li>
+  <li><strong>配置順:</strong> 「<code>send-newsletter</code> 後段・<code>update-timestamp</code> より前か後か」が未確定。timestamp 更新は配信成功の記録なので、Discord は <code>send-newsletter</code> の後・<code>update-timestamp</code> の前後どちらでも可だが、<strong>Discord 失敗が timestamp 更新を止めない</strong>こと（continue-on-error がそれを担保）を AC5 に明記。Mermaid 図では <code>DSC -. continue-on-error .-> TS</code> と <code>update-timestamp</code> の前提に見えるので、順序を文章でも固定する。</li>
+</ul>
+
+<h2 class="n">Nice-to-have（GO を妨げないが入れると堅牢）</h2>
+
+<h3>N1 <span class="m">[major→推奨]</span> global fetch のモック方法が ADR に未記載</h3>
+<p>観点6。既存テスト（<code>email-sender.test.ts</code>）は <code>vi.mock('resend')</code> でコンストラクタ注入をモックしている。だが DiscordSender は <strong>global <code>fetch</code> 直叩き</strong>なので注入点がない。ADR は「fetch はグローバル」とだけ書き、テスト手段を示していない。実装者がここで詰まるか、テストのために fetch を constructor 注入に変えて IF が揺れるリスク。<br>
+<strong>提案:</strong> ADR の Consequences/テスト節に「<code>vi.stubGlobal('fetch', vi.fn())</code> でモック、<code>afterEach</code> で <code>vi.unstubAllGlobals()</code>」を明記。これで IF（constructor は token のみ）を変えずに済む。加えて<strong>429 の <code>retry_after</code> 待機をテストするには <code>vi.useFakeTimers()</code> + <code>delay()</code> を fake timer で進める</strong>必要があり、その手順も1行添えると T3 が迷わない（<code>delay</code> を email-sender 同様モジュール内 free function にしておくと fake timer で制御可）。</p>
+
+<h3>N2 <span class="n">[minor]</span> 429 の retry_after 単位とヘッダ二重ソースの優先順位</h3>
+<p>Decision 3 は body <code>retry_after</code>（秒・小数）を採用し、<code>Retry-After</code> ヘッダも「見てよい」。だが Discord の body <code>retry_after</code> は<strong>秒（小数）</strong>、HTTP ヘッダ <code>Retry-After</code> は<strong>整数秒</strong>で、<strong>両方来た場合の優先順位</strong>が未定義。<strong>提案:</strong> 「body JSON の <code>retry_after</code> を一次ソース、パース失敗時のみヘッダ、両方無ければ <code>1s*(retry+1)</code>」と順位を固定。また <code>retry_after</code> が異常に大きい値（API 異常時）に備え上限クランプ（例 60s）を入れると無人実行でのハング暴走を防げる。</p>
+
+<h3>N3 <span class="n">[minor]</span> txt 不在 vs 空 txt の区別、JSON パース失敗時の挙動</h3>
+<p>AC4 は「txt 不在は skip + ログ」。一方 <code>output/themes.json</code> 自体が無い/壊れている場合の挙動が未定義（<code>send-newsletter</code> は throw する）。post-to-discord も同様に「themes.json 不在 → 明示エラー（exit 1）」を AC4 に1行足すと、後続で <code>fetch-themes</code> が exit 2（テーマ0）した場合との切り分けが明確になる。なお workflow 側で <code>has_themes=='true'</code> ガードがあるので実運用では到達しにくいが、手動 <code>npm run post-to-discord</code> 時の事故防止になる。</p>
+
+<h3>N4 <span class="n">[minor]</span> 正規化しない判断は現データでは妥当。ただし将来リスクの監視点</h3>
+<p>観点（Decision 4）。実フィクスチャ <code>newsletter-kSmyXNiKZDznRMGx4G9c.txt</code> を確認: <code>#</code> 見出しなし・行頭 <code>&gt;</code> なし・triple backtick なし・<code>===</code> は setext 非対応で無害。<strong>「正規化しない」は現状 ✅ 妥当。</strong> ただし強制スライス（M1 項4）で<strong>URL 行が分割境界をまたぐ</strong>と Discord の自動リンクが切れて URL が2チャンクに割れる。サンプルの URL 行は最長でも ~120 字で limit(1900) 内に収まるため実害なしだが、「単一行強制スライスは URL を割り得る」を ADR の既知トレードオフに1行記録しておくと将来の誤解を防ぐ。連番プレフィックス非付与（lead 裁定）は尊重。</p>
+
+<h3>N5 <span class="n">[minor]</span> ADR が ADR であるべき決定を内包している点は適切</h3>
+<p>Decision 1–5 はいずれも ADR 化されており、追加で ADR 化すべき隠れた決定は見当たらない。強いて言えば「<strong>逐次送信・並列化しない</strong>」「<strong>部分配信を許容（全停止しない）</strong>」は重要な振る舞い決定で、Alternatives に却下理由付きで記載済み。✅ 問題なし。</p>
+
+<h2>所有マップ / 並行性</h2>
+<p class="ok">✅ T3 と T4 の owned files に重複なし。</p>
+<ul>
+  <li>T3: <code>src/application/discord-sender.ts</code>, <code>src/application/index.ts</code>, <code>src/types/index.ts</code>, <code>scripts/post-to-discord.ts</code>, <code>scripts/fetch-themes.ts</code>, <code>tests/application/discord-sender.test.ts</code>, <code>package.json</code></li>
+  <li>T4: <code>.github/workflows/newsletter.yml</code>, <code>.env.sample</code>, <code>README.md</code>, <code>README.ja.md</code></li>
+</ul>
+<p><strong>注意点（衝突ではないが整合必須）:</strong> <code>src/types/index.ts</code> は T3 単独所有で正しいが、ADR は同ファイルに定数（<code>DISCORD_*</code>）と IF（<code>DiscordChunkResult</code>/<code>DiscordPostResult</code>）追加を指示。<code>fetch-themes.ts</code> の <code>ThemeData</code>/<code>ThemeOutput</code> は同ファイル内ローカル interface で <code>src/types</code> の <code>Theme</code> とは別物（ADR Decision 5 もローカル追加を指示）。両者を混同しないこと。<code>tsconfig.json</code> は <code>scripts/**/*</code> を include し <code>dist/scripts/</code> へ出力するので、workflow の <code>node dist/scripts/post-to-discord.js</code>（plan 実装メモ）は成立する。✅</p>
+
+<h2>結論</h2>
+<p><span class="m">条件付き GO。</span> Must-fix <strong>M1（分割規約の自己矛盾解消・復元契約の厳密化）</strong>・<strong>M2（空入力で POST 0 件 + 空 txt skip）</strong>・<strong>M3（workflow 条件式の文字列比較固定 + 失敗の annotation 可視化 + 配置順明記）</strong> を T3/T4 着手前に ADR/AC へ反映すれば実装 GO 可。M1 は inspector が AC2 を判定する根拠が崩れるため最優先。Nice-to-have N1–N4 は実装中に取り込めば足りる。</p>
+</body>
+</html>

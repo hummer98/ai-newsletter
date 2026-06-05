@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Plan 001 — Discord チャンネル配信（メール併用）</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:900px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:26px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:19px;margin-top:32px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+  .mermaid{display:flex;justify-content:center;margin:18px 0;padding:14px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Plan 001 — Discord チャンネル配信（メール併用）</h1>
+<p class="meta"><strong>Status</strong>: done &nbsp;·&nbsp;
+   <strong>Plan ref</strong>: <code>plan:001</code> &nbsp;·&nbsp;
+   <strong>Guild</strong>: <code>1240905723555086336</code></p>
+
+<h2>Intent &amp; scope</h2>
+<p>メールが使えない状況の代替として、生成済みニュースレターを<strong>テーマごとに別の Discord チャンネル</strong>へ
+GitHub Actions（無人実行）から自動投稿する。既存の Resend メール配信は<strong>残したまま併用</strong>する。</p>
+<p><strong>スコープ外</strong>: メール配信の停止・置換、Discord Embed / リッチカード整形、スレッド/リアクション、
+リアルタイム双方向連携、Firestore への channel ID 投入（運用データ設定であり別途）。</p>
+
+<h2>Flow</h2>
+<pre class="mermaid">
+flowchart LR
+  CRON([GA cron / dispatch]) --> FT[fetch-themes<br/>+discordChannelId]
+  FT --> GEN[generate + build-html/txt]
+  GEN --> MAIL[send-newsletter<br/>Resend メール]
+  GEN --> DSC[post-to-discord]
+  MAIL --> TS[update-timestamp]
+  DSC -. continue-on-error .-> TS
+  DSC --> SPLIT{txt &gt; 2000?}
+  SPLIT -- yes --> CHUNK[行境界で分割]
+  SPLIT -- no --> ONE[1メッセージ]
+  CHUNK --> API[(POST /channels/&#123;id&#125;/messages<br/>Authorization: Bot)]
+  ONE --> API
+</pre>
+
+<h2>設計判断（確定事項）</h2>
+<table>
+  <tr><th>論点</th><th>決定</th><th>理由</th></tr>
+  <tr><td>認証</td><td>Discord <strong>Bot Token</strong>（REST API v10）</td><td>token 1つで channel をメッセージ単位指定でき、Firestore の動的テーマに追従。Webhook はチャンネル数だけ Secret が増える。</td></tr>
+  <tr><td>channel 設定の所在</td><td>Firestore <code>themes/{id}.discordChannelId</code></td><td>既存の Firestore 中心設計と一貫。テーマ追加でコード変更不要。</td></tr>
+  <tr><td>メール</td><td><strong>併用</strong>（Resend は現状維持）</td><td>ユーザー要望。Discord は独立ステップで追加。</td></tr>
+  <tr><td>本文フォーマット</td><td><code>newsletter-{id}.txt</code> 全文を投稿</td><td>ユーザー要望。HTML は Discord 非表示。</td></tr>
+  <tr><td>2000字制約</td><td>行境界優先で ≤2000 字に分割し順次投稿</td><td>Discord の1メッセージ上限。txt は約6.7KB。</td></tr>
+  <tr><td>失敗時の独立性</td><td>Discord ステップは <code>continue-on-error</code></td><td>Discord 失敗がメール配信や workflow 全体を巻き込まない。</td></tr>
+</table>
+
+<h2>Acceptance criteria</h2>
+<blockquote>各項目は検証可能。inspector はこれに照らして GO/NOGO を判定する。</blockquote>
+<ul>
+  <li><strong>AC1</strong>: <code>fetch-themes.ts</code> が Firestore テーマの <code>discordChannelId</code>（文字列）を読み取り、
+      <code>output/themes.json</code> の各要素に含める。未設定テーマでは省略される。</li>
+  <li><strong>AC2</strong>: <code>DiscordSender</code> の分割ロジックが、テキストを行境界優先で ≤2000 字のチャンク列へ分割する。
+      単一行が 2000 字超の場合は強制分割する。空入力では空配列。ユニットテストで検証。</li>
+  <li><strong>AC3</strong>: <code>DiscordSender.post(channelId, text)</code> が各チャンクを
+      <code>POST https://discord.com/api/v10/channels/{channelId}/messages</code> に
+      <code>Authorization: Bot &lt;token&gt;</code> ヘッダ付きで順次送信し、HTTP 429 時は応答の <code>retry_after</code>
+      に従ってリトライする。<code>fetch</code> をモックしたテストで検証。</li>
+  <li><strong>AC4</strong>: <code>scripts/post-to-discord.ts</code> が <code>output/themes.json</code> を走査し、
+      <code>discordChannelId</code> を持つテーマについて <code>output/newsletter-{id}.txt</code> を投稿する。
+      channel 未設定テーマはスキップしログ出力。<code>DISCORD_BOT_TOKEN</code> 未設定かつ対象テーマありの場合は
+      エラー終了（exit 1）、対象テーマなしなら正常終了（exit 0）。</li>
+  <li><strong>AC5</strong>: <code>.github/workflows/newsletter.yml</code> に Discord 投稿ステップが追加され、
+      <code>has_themes==true</code> かつ <code>dry_run!=true</code> で実行される。既存のメール送信ステップは温存（併用）。
+      Discord ステップは <code>continue-on-error: true</code> でメール配信を阻害しない。</li>
+  <li><strong>AC6</strong>: <code>npm test</code> 全 green、<code>npm run build</code> 成功、<code>npm run lint</code> パス。</li>
+  <li><strong>AC7</strong>: <code>README.md</code> / <code>README.ja.md</code> / <code>.env.sample</code> に
+      Discord Bot Token と <code>discordChannelId</code> の設定手順が追記される。</li>
+</ul>
+
+<h2>Task breakdown &amp; dependencies</h2>
+<pre class="mermaid">
+flowchart TD
+  T1[T1 architect: 設計+ADR]:::a --> T2[T2 reviewer: 設計レビュー]:::r
+  T1 --> T3[T3 impl: コア配信ロジック]:::i
+  T1 --> T4[T4 impl: workflow+config+docs]:::i
+  T2 --> T3
+  T2 --> T4
+  T3 --> T5[T5 inspect]:::n
+  T4 --> T5
+  classDef a fill:#e0e7ff,stroke:#6366f1
+  classDef r fill:#fae8ff,stroke:#c026d3
+  classDef i fill:#dcfce7,stroke:#16a34a
+  classDef n fill:#fef9c3,stroke:#ca8a04
+</pre>
+<table>
+  <tr><th>task</th><th>description</th><th>gate</th><th>owner role</th></tr>
+  <tr><td>T1</td><td>Discord REST 連携の技術設計・分割/429 戦略・型を確定し ADR 化（<code>plan:001</code>）</td><td>—</td><td>architect</td></tr>
+  <tr><td>T2</td><td>設計をレビューし AC の検証可能性・抜けを指摘</td><td>—</td><td>design-reviewer</td></tr>
+  <tr><td>T3</td><td>コア実装: <code>DiscordSender</code>、<code>post-to-discord.ts</code>、<code>fetch-themes</code> 拡張、型、ユニットテスト、<code>package.json</code> スクリプト</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T4</td><td>workflow ステップ追加、<code>.env.sample</code>、README(.md/.ja.md) の設定手順</td><td><code>[gate:inspect]</code></td><td>implementer</td></tr>
+  <tr><td>T5</td><td>AC1–AC7 を検証し <code>docs/reports/001-inspection.html</code> に GO/NOGO</td><td>—</td><td>inspector</td></tr>
+</table>
+
+<h2>File-ownership map</h2>
+<blockquote>同時実行タスクは同一ファイルを所有しない（team モードに worktree 隔離なし）。
+T3 と T4 は所有ファイルが重ならないため並行可能。</blockquote>
+<table>
+  <tr><th>task</th><th>owned files</th></tr>
+  <tr><td>T1</td><td><code>docs/adr/001-discord-delivery.html</code></td></tr>
+  <tr><td>T2</td><td><code>docs/reports/001-design-review.html</code></td></tr>
+  <tr><td>T3</td><td><code>src/application/discord-sender.ts</code>, <code>src/application/index.ts</code>, <code>src/types/index.ts</code>, <code>scripts/post-to-discord.ts</code>, <code>scripts/fetch-themes.ts</code>, <code>tests/application/discord-sender.test.ts</code>, <code>package.json</code></td></tr>
+  <tr><td>T4</td><td><code>.github/workflows/newsletter.yml</code>, <code>.env.sample</code>, <code>README.md</code>, <code>README.ja.md</code></td></tr>
+  <tr><td>T5</td><td><code>docs/reports/001-inspection.html</code></td></tr>
+</table>
+
+<h2>実装メモ（契約の固定点）</h2>
+<ul>
+  <li>npm スクリプト名: <code>post-to-discord</code> → <code>npx tsx scripts/post-to-discord.ts</code>。ビルド後の CI 実行は <code>node dist/scripts/post-to-discord.js</code>。</li>
+  <li>環境変数: <code>DISCORD_BOT_TOKEN</code>。GitHub では Secret として設定。</li>
+  <li>themes.json の要素に <code>discordChannelId?: string</code> を追加（後方互換: 省略可）。</li>
+  <li>分割の安全上限は 2000 字（余裕を持たせ実装側で定数化、例 1900）。チャンク間は軽い遅延 + 429 の <code>retry_after</code> 尊重。</li>
+  <li>Discord ステップは <code>send-newsletter</code> の後段に置き <code>continue-on-error: true</code>。</li>
+</ul>
+
+<h2>Open questions / risks</h2>
+<ul>
+  <li><strong>運用前提（コード外）</strong>: Bot がギルド <code>1240905723555086336</code> に参加済みで、各対象チャンネルに「メッセージ送信」権限を持つこと。</li>
+  <li><strong>データ投入（コード外）</strong>: 現行2テーマ（AIコーディング / マリンテクノロジー）の Firestore 文書に <code>discordChannelId</code> を設定する必要がある。未設定テーマは投稿スキップ。</li>
+  <li><strong>Secret 設定</strong>: GitHub に <code>DISCORD_BOT_TOKEN</code> Secret を追加する必要がある。</li>
+  <li>txt 先頭の <code>====</code> 罫線等が Discord markdown で意図せぬ装飾になる可能性 → 必要なら投稿時に軽く正規化（T1 で判断）。</li>
+</ul>
+
+<h2>Linked ADRs</h2>
+<ul><li><code>docs/adr/001-discord-delivery.html</code>（T1 architect が作成）</li></ul>
+</body>
+</html>

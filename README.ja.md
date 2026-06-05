@@ -55,7 +55,18 @@ source .env
 3. [API Keys](https://resend.com/api-keys) から API キーを作成
 4. `.env` の `RESEND_API_KEY` と `FROM_EMAIL` を設定
 
-### 4. Claude Code 認証のセットアップ
+### 4. Discord 配信のセットアップ（任意）
+
+メール配信に加えて、テーマごとに専用の Discord チャンネルへニュースレターを投稿できます。メール配信と併用されるため、メールのみで運用する場合はこの手順を省略できます。
+
+1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリケーションを作成し、**Bot** を追加してトークンを発行します。
+2. Bot をギルドに参加させ、各対象チャンネルに **メッセージ送信** 権限を付与します。
+3. `.env` の `DISCORD_BOT_TOKEN` を設定します（GitHub Secret にも登録します。手順7参照）。
+4. Firestore の各テーマ文書に、投稿先チャンネルID（文字列）を `discordChannelId` フィールドとして設定します。後述の「Firestoreデータの作成」を参照してください。
+
+**挙動**: `discordChannelId` を持つテーマごとに、`newsletter-{id}.txt` の全文を該当チャンネルへ投稿します。本文は最大2000字のチャンクに分割して順次投稿されます。`discordChannelId` を設定していないテーマは Discord 投稿をスキップします。これはメール配信との併用であり、`DISCORD_BOT_TOKEN` 未設定かつどのテーマにも `discordChannelId` が無い場合、Discord ステップは実質的に何もしません。
+
+### 5. Claude Code 認証のセットアップ
 
 サブスクリプションタイプに応じて、以下のいずれか1つを選択してください：
 
@@ -74,7 +85,7 @@ source .env
 2. [API Keys](https://console.anthropic.com/settings/keys) から API キーを作成
 3. `.env`の`ANTHROPIC_API_KEY`にAPIキー（`sk-ant-api03-`で始まる）を設定
 
-### 5. GCP Workload Identity Federation の設定
+### 6. GCP Workload Identity Federation の設定
 
 GitHub ActionsからGCPリソースにアクセスするために、Workload Identity Federationを設定します。
 
@@ -124,7 +135,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $CLOUDSDK_CORE_PROJECT --format='value(projectNumber)')/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/${GITHUB_REPO}"
 ```
 
-### 6. Firestoreデータの作成
+### 7. Firestoreデータの作成
 
 #### サンプルデータのインストール（推奨）
 
@@ -158,13 +169,18 @@ Firestore のデータ構造は以下の通りです：
 ```
 themes/
   └── {theme-id}/
-        ├── prompt: string        # テーマのプロンプト
+        ├── prompt: string             # テーマのプロンプト
+        ├── discordChannelId: string   # （任意）このテーマの Discord チャンネルID
         └── mailto/
               └── {subscriber-id}/
                     └── mailto: string  # 購読者のメールアドレス
 ```
 
-### 7. GitHub Secrets/Variables の登録
+テーマで Discord 配信を有効にするには、そのテーマ文書の `discordChannelId`
+フィールドに投稿先チャンネルID（文字列）を設定します。このフィールドが無いテーマは
+Discord 投稿をスキップします。
+
+### 8. GitHub Secrets/Variables の登録
 
 セットアップスクリプトを実行して一括登録：
 
@@ -188,6 +204,7 @@ themes/
 |------|-------------|
 | `RESEND_API_KEY` | Resend APIキー |
 | `FROM_EMAIL` | 送信元メールアドレス |
+| `DISCORD_BOT_TOKEN` | （任意）Discord チャンネル配信用の Bot トークン |
 | `CLAUDE_CODE_OAUTH_TOKEN` | （オプションA）Claude Pro/Max用のOAuthトークン |
 | `ANTHROPIC_API_KEY` | （オプションB）APIサブスクリプション用のAPIキー |
 | `WORKLOAD_IDENTITY_PROVIDER` | WIF プロバイダーの完全パス |
