@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ADR 001 — Discord チャンネル配信の技術設計</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:840px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:26px}
+  h3{font-size:15px;margin-top:18px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre code{background:none;padding:0}
+  pre.code{background:#f7f8fa;border:1px solid #eee;border-radius:8px;padding:12px;overflow:auto;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55}
+  table{border-collapse:collapse;width:100%;margin:10px 0}
+  th,td{border:1px solid #ddd;padding:6px 9px;text-align:left;vertical-align:top;font-size:13px}
+  th{background:#f7f8fa}
+  .meta{color:#666;font-size:13px}
+  .mermaid{display:flex;justify-content:center;margin:16px 0;padding:12px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+<!-- docs/adr/001-discord-delivery.html. AI-read: terse, contract for T3 impl + T2 review.
+     Source of truth for DiscordSender signatures, split boundaries, 429 policy, normalization. -->
+
+<h1>ADR 001 — Discord チャンネル配信の技術設計</h1>
+<p class="meta"><strong>Status</strong>: accepted &nbsp;·&nbsp;
+   <strong>Plan ref</strong>: <code>plan:001</code>
+   (<code>docs/plans/001-discord-delivery.html</code>) &nbsp;·&nbsp;
+   <strong>Owns</strong>: this file only. 実装は T3 が別タスク。</p>
+
+<h2>Context</h2>
+<p>確定前提（変更不可、plan:001 由来）: Bot Token 認証 / REST v10
+<code>POST https://discord.com/api/v10/channels/{channelId}/messages</code> /
+ヘッダ <code>Authorization: Bot &lt;token&gt;</code> / body <code>{content}</code> /
+env <code>DISCORD_BOT_TOKEN</code> / channel は Firestore
+<code>themes/{id}.discordChannelId</code> → <code>output/themes.json</code> 伝搬 /
+本文は <code>newsletter-{id}.txt</code> 全文 / メール（Resend）併用 /
+1 メッセージ 2000 字上限 → 行境界優先分割。</p>
+<p>既存パターン（踏襲対象）: <code>src/application/email-sender.ts</code> =
+クラス + constructor DI + 集約結果型（<code>SendResult</code>）+ 純粋 <code>splitIntoBatches</code> +
+<code>delay()</code> + ローカル定数 <code>MAX_RETRIES</code> / 429 リトライ。
+本 ADR が決めるのは plan:001 の 5 論点（IF / 分割境界 / 429 / 罫線正規化 / 型伝搬）のみ。</p>
+
+<h2>Decision — 全体構成</h2>
+<pre class="mermaid">
+flowchart LR
+  TJ[(themes.json<br/>+discordChannelId?)] --> P[post-to-discord.ts]
+  TXT[(newsletter-id.txt)] --> P
+  P -->|new DiscordSender token| DS
+  subgraph DS[DiscordSender]
+    SPLIT["splitIntoMessages(text,1900)<br/>純粋関数"] --> POST["post(channelId,text)<br/>= split + 逐次 fetch"]
+  end
+  POST -->|chunk毎| API[(Discord REST v10)]
+  POST --> R[DiscordPostResult 集約]
+  R --> P
+  P -->|対象テーマ全失敗 etc.| EXIT[exit code]
+</pre>
+
+<h3>分離の決定</h3>
+<ul>
+  <li><strong>純粋関数</strong> <code>splitIntoMessages(text, limit?)</code>: I/O なし・テスト容易（AC2）。
+      <code>post()</code> から呼ぶ。</li>
+  <li><strong>I/O メソッド</strong> <code>post(channelId, text)</code>: split → chunk 毎に <code>fetch</code> 逐次送信・429 リトライ・結果集約（AC3）。
+      <code>fetch</code> はグローバル（Node 20+）。新規依存なし。</li>
+  <li><strong>オーケストレーション</strong> <code>scripts/post-to-discord.ts</code>: themes.json 走査・skip 判定・exit code（AC4）。
+      <code>DiscordSender</code> は <code>src/application/index.ts</code> から re-export。</li>
+</ul>
+
+<h2>Decision 1 — DiscordSender インターフェース</h2>
+<p>ファイル: <code>src/application/discord-sender.ts</code>。constructor で token を受け、env 読みは script 側（テスト容易）。</p>
+<pre class="code"><code>// src/types/index.ts に追加
+export const DISCORD_MESSAGE_LIMIT = 2000;        // Discord 上限（参照用）
+export const DISCORD_SAFE_LIMIT = 1900;           // 実分割の既定上限（マージン100）
+export const DISCORD_CHUNK_DELAY_MS = 750;        // chunk 間の軽い遅延
+export const DISCORD_MAX_RETRIES = 5;             // 429 リトライ上限/chunk
+
+export interface DiscordChunkResult {
+  index: number;          // 0-based chunk index
+  ok: boolean;
+  status?: number;        // HTTP status（取得できた場合）
+  error?: string;
+}
+
+export interface DiscordPostResult {
+  channelId: string;
+  totalChunks: number;
+  successCount: number;
+  failedChunks: number[]; // 失敗 chunk の index 群
+  errors: string[];       // 人間/ログ向けメッセージ集約
+}
+
+// src/application/discord-sender.ts
+export class DiscordSender {
+  constructor(token: string);  // 空/空白 token は throw（EmailSender 踏襲）
+
+  // 純粋関数（static でも free function でも可。export 必須＝AC2 テスト対象）
+  splitIntoMessages(text: string, limit?: number): string[];
+
+  // I/O: split→逐次POST→集約。例外を投げず DiscordPostResult を返す。
+  post(channelId: string, text: string): Promise&lt;DiscordPostResult&gt;;
+}</code></pre>
+<blockquote>戻り値方針: <code>post()</code> は throw しない（Resend 版 <code>send()</code> と同様、結果型に畳む）。
+script 側が <code>DiscordPostResult</code> を集計して exit code を決める。
+<code>splitIntoMessages</code> は <code>export</code> された純粋関数として AC2 のユニットテストから直接呼べること。</blockquote>
+
+<h2>Decision 2 — 2000字分割アルゴリズム（契約）</h2>
+<p>実装はこの境界条件に従う。reviewer/inspector はこの一覧で検証する。
+既定 <code>limit = DISCORD_SAFE_LIMIT (1900)</code>。"文字数" は JS <code>String.length</code>（UTF-16 単位）で数える
+— 本文は CJK 中心で BMP のため code point と一致し、1900 マージンが 2000(Discord は code point カウント)を確実に下回る。</p>
+<ol>
+  <li><strong>空入力</strong>: <code>text === ''</code> → <code>[]</code>（空配列）。<code>post()</code> 側は空配列なら送信 0 件・success 扱い。</li>
+  <li><strong>行分割の基準</strong>: <code>text.split('\n')</code> で行へ分解。各行に <code>'\n'</code> を再付与して結合する（区切りを保存）。</li>
+  <li><strong>貪欲結合</strong>: 現在バッファに「行 + 改行」を足すと <code>limit</code> を<strong>超える</strong>なら、バッファを 1 chunk として flush し、新バッファを当該行で開始。</li>
+  <li><strong>単一行が limit 超</strong>: 1 行だけで <code>limit</code> を超える場合は <code>limit</code> 単位で<strong>強制スライス</strong>（<code>slice(0,limit)</code> を繰り返す）。改行境界を待たない。</li>
+  <li><strong>末尾改行</strong>: 入力末尾の <code>'\n'</code> は出力で温存してよいが、それだけの空 chunk は作らない。各 chunk は trim せず原文を保つ（本文の体裁を壊さない）。</li>
+  <li><strong>各 chunk は <code>1 ≤ length ≤ limit</code></strong>: 空 chunk を出力しない。</li>
+  <li><strong>復元可能性</strong>: <code>chunks.join('')</code> が概ね原文に一致（境界での改行重複や欠落を生まない）。テストで <code>join('') === text</code> もしくは末尾改行差のみ、を確認。</li>
+  <li><strong>limit 引数</strong>: 呼び出しで <code>limit</code> 指定時はそれを優先（テストで小さい値を渡せる）。未指定で 1900。</li>
+</ol>
+<pre class="mermaid">
+flowchart TD
+  S([text]) --> E{text == ''?}
+  E -- yes --> EMP[return ［］]
+  E -- no --> LN[lines = split '\n']
+  LN --> IT{次の行 L あり?}
+  IT -- no --> FL[buf 非空なら push] --> DONE([chunks])
+  IT -- yes --> BIG{L 単独 &gt; limit?}
+  BIG -- yes --> SL[buf flush; L を limit 毎 slice して push] --> IT
+  BIG -- no --> FIT{buf + L+改行 &gt; limit?}
+  FIT -- yes --> PF[buf push; buf = L+改行] --> IT
+  FIT -- no --> AP[buf += L+改行] --> IT
+</pre>
+
+<h2>Decision 3 — 429 / エラーハンドリング</h2>
+<pre class="mermaid">
+sequenceDiagram
+  participant P as post()
+  participant D as Discord REST
+  loop chunk 毎（逐次）
+    P->>D: POST /channels/{id}/messages {content}
+    alt 2xx
+      D-->>P: 200/201
+      Note over P: successCount++ / 次 chunk 前に delay 750ms
+    else 429 Too Many Requests
+      D-->>P: 429 { retry_after }
+      Note over P: retry_after 秒 待機<br/>retries&lt;5 なら同 chunk 再送
+    else 4xx/5xx 非429
+      D-->>P: 401/403/404/5xx
+      Note over P: failedChunks に index 追加<br/>当該 chunk は中断、以降は継続
+    end
+  end
+  P-->>P: DiscordPostResult 集約（throw しない）
+</pre>
+<ul>
+  <li><strong>429</strong>: 応答 JSON の <code>retry_after</code>（秒、小数あり）を尊重し
+      <code>delay(retry_after * 1000 + 余裕)</code> 後に<strong>同一 chunk</strong>を再送。
+      <code>retry_after</code> 欠落時は <code>1s * (retry+1)</code> のフォールバック。
+      上限 <code>DISCORD_MAX_RETRIES = 5</code>。超過したら当該 chunk を失敗計上し次へ。
+      <code>Retry-After</code> ヘッダもフォールバックとして見てよい。</li>
+  <li><strong>chunk 間遅延</strong>: 成功 chunk の後、次 chunk 前に <code>DISCORD_CHUNK_DELAY_MS (750ms)</code>。
+      429 を事前に減らす（per-channel 5 msg/5s 級の制限に対する保険）。最後の chunk 後は不要。</li>
+  <li><strong>非リトライ（401/403/404/その他 4xx, 5xx）</strong>: リトライしない。
+      <code>failedChunks</code> に index、<code>errors</code> に <code>status</code> + 本文要約を積む。
+      残り chunk は<strong>続行</strong>（部分配信を許容、途中で全停止しない）。
+      401/403 は token/権限の運用問題、404 は channelId 誤り — script ログで識別可能にする。</li>
+  <li><strong>ネットワーク例外</strong>（fetch reject）: 非リトライ扱いで chunk 失敗計上・続行。</li>
+  <li><strong>throw しない</strong>: <code>post()</code> は常に <code>DiscordPostResult</code> を返す。throw は constructor の token 欠落のみ。</li>
+</ul>
+
+<h2>Decision 4 — txt の "====" 罫線等の正規化</h2>
+<p><strong>結論: 正規化しない（原文 .txt をそのまま投稿）。</strong></p>
+<ul>
+  <li>Discord markdown の見出しは行頭 <code>#&nbsp;</code>/<code>##&nbsp;</code>/<code>###&nbsp;</code> のみ。
+      <code>==================</code> や <code>【…】</code> は装飾化されない。setext 見出し（<code>===</code> 下線）は Discord 非対応。</li>
+  <li>本文に markdown 制御文字（<code>*</code> <code>_</code> <code>~</code> <code>`</code> <code>&gt;</code> や裸 URL）が出るが、
+      現状サンプル（<code>output/newsletter-kSmyXNiKZDznRMGx4G9c.txt</code>）では実害ある誤装飾は見られない。
+      URL は Discord が自動リンク化するのみで体裁は保たれる。</li>
+  <li>正規化を入れると「.txt = 配信本文の単一ソース」という不変条件が崩れ、メール本文と乖離する。
+      投機的抽象化を避ける（plan の minimal 方針）。</li>
+  <li><strong>将来フック</strong>: 万一誤装飾が出たら <code>post()</code> 前段に純粋な
+      <code>sanitize(text)</code> を足せる位置を空けておく（今は実装しない）。</li>
+</ul>
+
+<h2>Decision 5 — discordChannelId 型伝搬（fetch-themes）</h2>
+<p>ファイル: <code>scripts/fetch-themes.ts</code>（+ 参照型は <code>src/types/index.ts</code>）。
+文字列のときのみ含める＝後方互換（未設定テーマで key 省略 → AC1）。</p>
+<pre class="code"><code>// fetch-themes.ts: ThemeData / ThemeOutput に optional 追加
+interface ThemeData   { /* ... */ discordChannelId?: string; }
+interface ThemeOutput { id; title; prompt; discordChannelId?: string; }
+
+// 読み取り（doc.data() から）。文字列のときだけ採用:
+const discordChannelId =
+  typeof data.discordChannelId === 'string' &amp;&amp; data.discordChannelId.length &gt; 0
+    ? data.discordChannelId : undefined;
+
+// allThemes.push({ ..., discordChannelId });
+
+// outputThemes.map: undefined のときは key 自体を出さない（...spread で条件付与）
+return {
+  id: theme.id, title: theme.title, prompt: processedPrompt,
+  ...(theme.discordChannelId ? { discordChannelId: theme.discordChannelId } : {})
+};</code></pre>
+<blockquote>JSON 出力で <code>discordChannelId</code> key が<strong>省略</strong>されること（<code>: null</code>/<code>: undefined</code> でなく不在）。
+<code>post-to-discord.ts</code> 側は <code>typeof theme.discordChannelId === 'string'</code> で投稿対象判定。</blockquote>
+
+<h2>post-to-discord.ts の契約（AC4・参考、所有は T3）</h2>
+<ul>
+  <li>themes.json を走査。<code>discordChannelId</code> 文字列を持つテーマ = 投稿対象、無いテーマ = skip + ログ。</li>
+  <li>対象テーマあり &amp;&amp; <code>DISCORD_BOT_TOKEN</code> 未設定 → <code>exit 1</code>。
+      対象テーマ無し → <code>exit 0</code>（token 不問）。</li>
+  <li>各対象: <code>output/newsletter-{id}.txt</code> 読み込み → <code>sender.post(channelId, text)</code>。
+      txt 不在は skip + ログ。<code>DiscordPostResult</code> を集計し全体ログ出力。</li>
+  <li>exit code 方針（提案・lead 確認用 open question 参照）: 全 chunk 成功 = 0。
+      部分/全失敗があっても workflow 側は <code>continue-on-error: true</code> なので script は失敗を<strong>非ゼロ</strong>で返してログ可視化（メール配信は別ステップで阻害されない）。</li>
+  <li>npm script <code>post-to-discord</code> → <code>npx tsx scripts/post-to-discord.ts</code>（CI ビルド後は <code>node dist/scripts/post-to-discord.js</code>）。</li>
+</ul>
+
+<h2>Consequences</h2>
+<ul>
+  <li><strong>容易に</strong>: 純粋 split の網羅テスト（境界 1〜8）/ <code>fetch</code> モックで 429・4xx 分岐テスト（AC2/AC3）。新規 npm 依存ゼロ（global fetch）。</li>
+  <li><strong>容易に</strong>: テーマ追加で channelId を Firestore に入れるだけ。コード変更不要。</li>
+  <li><strong>トレードオフ（許容）</strong>: 逐次送信 + 750ms 遅延でテーマあたり数 chunk なら数秒。並列化しない（rate limit/順序保証優先）。</li>
+  <li><strong>トレードオフ（許容）</strong>: 正規化しないため極端な markdown を含む将来本文で誤装飾の可能性 → sanitize フック位置を明示で緩和。</li>
+  <li><strong>残課題</strong>: per-channel rate limit の正確値は未保証。750ms + 429 尊重で実用上吸収。</li>
+</ul>
+
+<h2>Alternatives considered</h2>
+<ul>
+  <li><strong>discord.js 採用</strong> — 却下。本用途は単発 REST POST のみ。global <code>fetch</code> で十分、依存とコールドスタートを増やさない（minimal 方針）。</li>
+  <li><strong>Webhook URL 認証</strong> — 却下（plan 確定済）。チャンネル数だけ Secret 増、動的テーマ非対応。</li>
+  <li><strong>1 行超を改行境界まで送る</strong> — 却下。超長単一行で無限に詰まる。強制スライスで停止性を保証。</li>
+  <li><strong>失敗 chunk で全停止</strong> — 却下。部分配信の方が情報損失が小さい。429 のみ再送、他は計上して続行。</li>
+  <li><strong>投稿時に "====" 罫線を除去/置換</strong> — 却下。.txt 単一ソース不変条件を維持（Decision 4）。</li>
+</ul>
+
+<h2>Open questions（→ lead）</h2>
+<ul>
+  <li>part 失敗時に <code>post-to-discord.ts</code> を非ゼロ exit にするか / ログのみで 0 にするか。
+      <code>continue-on-error</code> 下なので可視性目的で非ゼロ提案。要確認。</li>
+  <li>chunk 区切りに <code>(1/3)</code> 等の連番プレフィックスを付けるか。現状は付けない（本文を汚さない）方針。要否は運用判断。</li>
+</ul>
+
+<h2>File-ownership への影響（→ lead）</h2>
+<p>plan の所有マップから<strong>変更なし</strong>。本 ADR の型追加（<code>src/types/index.ts</code> の定数・IF）と
+<code>fetch-themes.ts</code> 改修はいずれも既に T3 所有。T4 と非重複のまま。
+新規ファイルは <code>src/application/discord-sender.ts</code> / <code>scripts/post-to-discord.ts</code> /
+<code>tests/application/discord-sender.test.ts</code>（全て T3 所有）で計画通り。</p>
+</body>
+</html>

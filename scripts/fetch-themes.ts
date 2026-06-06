@@ -10,12 +10,14 @@ interface ThemeData {
   prompt: string;
   schedule?: string;
   lastDeliveredAt?: Date;
+  discordChannelId?: string;
 }
 
 interface ThemeOutput {
   id: string;
   title: string;
   prompt: string;
+  discordChannelId?: string;
 }
 
 async function main(): Promise<void> {
@@ -36,6 +38,10 @@ async function main(): Promise<void> {
     const title = data.title;
     const prompt = data.prompt;
     const schedule = data.schedule;
+    const discordChannelId =
+      typeof data.discordChannelId === 'string' && data.discordChannelId.length > 0
+        ? data.discordChannelId
+        : undefined;
     let lastDeliveredAt: Date | undefined;
 
     // Convert Firestore Timestamp to Date
@@ -52,7 +58,8 @@ async function main(): Promise<void> {
         title: title,
         prompt: prompt,
         schedule: typeof schedule === 'string' ? schedule : undefined,
-        lastDeliveredAt: lastDeliveredAt
+        lastDeliveredAt: lastDeliveredAt,
+        discordChannelId: discordChannelId
       });
     }
   }
@@ -79,7 +86,8 @@ async function main(): Promise<void> {
     return {
       id: theme.id,
       title: theme.title,
-      prompt: processedPrompt
+      prompt: processedPrompt,
+      ...(theme.discordChannelId ? { discordChannelId: theme.discordChannelId } : {})
     };
   });
 

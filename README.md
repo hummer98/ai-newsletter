@@ -55,7 +55,18 @@ source .env
 3. Create an API key from the [API Keys](https://resend.com/api-keys) section
 4. Set `RESEND_API_KEY` and `FROM_EMAIL` in `.env`
 
-### 4. Claude Code Authentication Setup
+### 4. Discord Delivery Setup (Optional)
+
+In addition to email, newsletters can be posted to a dedicated Discord channel per theme. This runs alongside email delivery, so you can skip this section if you only need email.
+
+1. Open the [Discord Developer Portal](https://discord.com/developers/applications), create an application, add a **Bot**, and issue its token.
+2. Invite the Bot to your guild and grant it the **Send Messages** permission on each target channel.
+3. Set `DISCORD_BOT_TOKEN` in `.env` (and register it as a GitHub Secret; see step 7).
+4. For each theme document in Firestore, set the `discordChannelId` field to the target channel ID (a string). See "Create Firestore Data" below.
+
+**Behavior**: For every theme that has a `discordChannelId`, the full `newsletter-{id}.txt` body is posted to the corresponding channel, split into chunks of up to 2000 characters. Themes without a `discordChannelId` are skipped for Discord. This is in addition to email delivery; if `DISCORD_BOT_TOKEN` is not set and no theme has a `discordChannelId`, the Discord step is effectively a no-op.
+
+### 5. Claude Code Authentication Setup
 
 Choose ONE authentication method based on your subscription type:
 
@@ -74,7 +85,7 @@ Choose ONE authentication method based on your subscription type:
 2. Create an API key from the [API Keys](https://console.anthropic.com/settings/keys) section
 3. Set `ANTHROPIC_API_KEY` in `.env` with the API key (starts with `sk-ant-api03-`)
 
-### 5. GCP Workload Identity Federation Setup
+### 6. GCP Workload Identity Federation Setup
 
 Configure Workload Identity Federation for GitHub Actions to access GCP resources.
 
@@ -124,7 +135,7 @@ gcloud iam service-accounts add-iam-policy-binding \
   --member="principalSet://iam.googleapis.com/projects/$(gcloud projects describe $CLOUDSDK_CORE_PROJECT --format='value(projectNumber)')/locations/global/workloadIdentityPools/${POOL_NAME}/attribute.repository/${GITHUB_REPO}"
 ```
 
-### 6. Create Firestore Data
+### 7. Create Firestore Data
 
 #### Install Sample Data (Recommended)
 
@@ -158,13 +169,17 @@ Firestore data structure:
 ```
 themes/
   └── {theme-id}/
-        ├── prompt: string        # Theme prompt
+        ├── prompt: string             # Theme prompt
+        ├── discordChannelId: string   # (Optional) Discord channel ID for this theme
         └── mailto/
               └── {subscriber-id}/
                     └── mailto: string  # Subscriber email address
 ```
 
-### 7. Register GitHub Secrets/Variables
+To enable Discord delivery for a theme, set its `discordChannelId` field to the
+target channel ID (a string). Themes without this field are skipped for Discord.
+
+### 8. Register GitHub Secrets/Variables
 
 Run the setup script for batch registration:
 
@@ -188,6 +203,7 @@ Configure the following in repository Settings > Secrets and variables > Actions
 |------|-------------|
 | `RESEND_API_KEY` | Resend API key |
 | `FROM_EMAIL` | Sender email address |
+| `DISCORD_BOT_TOKEN` | (Optional) Discord Bot token for channel delivery |
 | `CLAUDE_CODE_OAUTH_TOKEN` | (Option A) Claude OAuth token for Pro/Max subscribers |
 | `ANTHROPIC_API_KEY` | (Option B) Anthropic API key for API subscription users |
 | `WORKLOAD_IDENTITY_PROVIDER` | Full path of WIF provider |

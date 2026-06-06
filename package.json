@@ -15,6 +15,7 @@
     "fetch-themes": "npx tsx scripts/fetch-themes.ts",
     "build-html": "npx tsx scripts/build-html.ts",
     "send-newsletter": "npx tsx scripts/send-newsletter.ts",
+    "post-to-discord": "npx tsx scripts/post-to-discord.ts",
     "update-timestamp": "npx tsx scripts/update-delivery-timestamp.ts"
   },
   "keywords": [

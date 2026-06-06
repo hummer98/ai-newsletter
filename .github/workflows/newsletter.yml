@@ -167,6 +167,22 @@ jobs:
           echo "Sending newsletters..."
           node dist/scripts/send-newsletter.js
 
+      - name: Post to Discord
+        id: post-discord
+        if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run != true
+        continue-on-error: true
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+          CLOUDSDK_CORE_PROJECT: ${{ vars.CLOUDSDK_CORE_PROJECT }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ steps.auth.outputs.credentials_file_path }}
+        run: |
+          echo "Posting newsletters to Discord..."
+          node dist/scripts/post-to-discord.js
+
+      - name: Warn on Discord post failure
+        if: steps.post-discord.outcome == 'failure'
+        run: echo "::warning::Discord post step failed (email delivery unaffected)"
+
       - name: Update delivery timestamp
         if: steps.fetch-themes.outputs.has_themes == 'true' && inputs.dry_run != true
         env:

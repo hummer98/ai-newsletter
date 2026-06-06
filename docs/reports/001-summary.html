@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Report 001 — Discord配信 クローズサマリー</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:900px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:24px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:18px;margin-top:28px}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:7px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .ok{color:#16a34a;font-weight:600}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+</style>
+</head>
+<body>
+<h1>Report 001 — Discordチャンネル配信（メール併用） クローズサマリー</h1>
+<p><strong>Plan</strong>: <code>plan:001</code> ·
+   <strong>結果</strong>: <span class="ok">GO / done</span> ·
+   <strong>検査</strong>: <code>docs/reports/001-inspection.html</code> (Verdict: GO)</p>
+
+<h2>実装したもの</h2>
+<blockquote>生成済みニュースレターを、テーマごとに別の Discord チャンネルへ GitHub Actions から自動投稿する経路を追加。既存の Resend メール配信は温存し併用。</blockquote>
+<table>
+  <tr><th>領域</th><th>変更</th></tr>
+  <tr><td>コア配信</td><td><code>src/application/discord-sender.ts</code>（新規）: <code>splitIntoMessages()</code> 純粋関数（行境界優先・厳密復元 <code>join('')===text</code>・limit=1900）と <code>DiscordSender.post()</code>（Bot REST v10・429 retry_after リトライ・部分失敗集約）</td></tr>
+  <tr><td>スクリプト</td><td><code>scripts/post-to-discord.ts</code>（新規）: themes.json 走査→<code>discordChannelId</code> 保持テーマの <code>newsletter-{id}.txt</code> 全文を投稿。token未設定/対象0件/部分失敗で exit 分岐＋<code>::error::</code> annotation</td></tr>
+  <tr><td>テーマ伝搬</td><td><code>scripts/fetch-themes.ts</code>: Firestore <code>discordChannelId</code> を themes.json へ条件 spread で伝搬（未設定は key 省略）</td></tr>
+  <tr><td>型</td><td><code>src/types/index.ts</code>: <code>Theme.discordChannelId?</code>、<code>DiscordPostResult</code>、<code>DISCORD_*</code> 定数</td></tr>
+  <tr><td>CI</td><td><code>.github/workflows/newsletter.yml</code>: Send 後段に "Post to Discord"（<code>continue-on-error</code>・失敗時 <code>::warning::</code>）。validate-config は token 必須化せず（任意・併用）</td></tr>
+  <tr><td>設定/docs</td><td><code>.env.sample</code>・<code>README.md</code>・<code>README.ja.md</code> に Discord 設定手順を追記</td></tr>
+  <tr><td>テスト</td><td><code>tests/application/discord-sender.test.ts</code>（新規）: 分割境界・実フィクスチャ復元・POST/認証/429/403 を検証</td></tr>
+</table>
+
+<h2>検証結果</h2>
+<ul>
+  <li><code>npm run build</code> 成功</li>
+  <li><code>npm test</code> = 7 files / 78 tests passed</li>
+  <li><code>npm run lint</code> 残エラーは本変更以前からの既知課題（tests の tsconfig exclude / <code>schedule-matcher.ts</code> no-case-declarations）のみ。本変更は新規 lint エラーを導入せず</li>
+</ul>
+
+<h2>残作業（コード外・運用設定）</h2>
+<blockquote>コードは完了。実際に配信を有効化するには以下の運用設定が必要。</blockquote>
+<ol>
+  <li>Discord Bot を作成しトークン発行。ギルド <code>1240905723555086336</code> に参加させ、各対象チャンネルに「メッセージ送信」権限を付与</li>
+  <li>GitHub リポジトリ Secret に <code>DISCORD_BOT_TOKEN</code> を追加</li>
+  <li>Firestore の各テーマ文書に <code>discordChannelId</code>（チャンネルID文字列）を設定。未設定テーマは Discord 投稿をスキップ（メールは従来どおり）</li>
+</ol>
+
+<h2>プロセス</h2>
+<p>OOD: architect（設計+ADR）→ design-reviewer（Must-fix M1/M2/M3 を実装前に摘出）→ implementer×2 並列（コア / CI+docs、ファイル所有非重複）→ inspector（独立検査 GO）。状態は <code>docs/</code> 配下に保持。</p>
+<ul>
+  <li><code>docs/plans/001-discord-delivery.html</code> — 契約（done）</li>
+  <li><code>docs/adr/001-discord-delivery.html</code> — 設計決定</li>
+  <li><code>docs/reports/001-design-review.html</code> — 設計レビュー</li>
+  <li><code>docs/reports/001-inspection.html</code> — 検査（Verdict: GO）</li>
+</ul>
+</body>
+</html>

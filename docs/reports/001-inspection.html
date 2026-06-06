@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Inspection 001 — Discord チャンネル配信</title>
+<style>
+  body{font:15px/1.7 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;max-width:880px;margin:32px auto;padding:0 20px;color:#1a1a1a}
+  h1{font-size:26px;border-bottom:2px solid #ddd;padding-bottom:8px}
+  h2{font-size:19px;margin-top:28px}
+  .verdict{display:inline-block;padding:4px 14px;border-radius:6px;font-weight:800;font-size:18px}
+  .go{background:#dcfce7;color:#166534} .nogo{background:#fee2e2;color:#991b1b}
+  code{background:#f3f4f6;border-radius:4px;padding:1px 5px;font-family:ui-monospace,Menlo,monospace;font-size:13px}
+  pre.code{background:#f7f8fa;border:1px solid #eee;border-radius:8px;padding:12px;overflow:auto;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;line-height:1.55}
+  .meta{color:#666;font-size:13px}
+  blockquote{border-left:3px solid #cbd5e1;margin:12px 0;padding:4px 14px;color:#555;background:#f8fafc}
+  ol li,ul li{margin:5px 0}
+  table{border-collapse:collapse;width:100%;margin:12px 0}
+  th,td{border:1px solid #ddd;padding:6px 10px;text-align:left;vertical-align:top}
+  th{background:#f7f8fa}
+  .ok{color:#15803d;font-weight:700}
+  .bad{color:#b91c1c;font-weight:700}
+  .mermaid{display:flex;justify-content:center;margin:14px 0;padding:12px;background:#fafbfc;border:1px solid #eee;border-radius:10px}
+</style>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</head>
+<body>
+
+<h1>Inspection 001 — Discord チャンネル配信</h1>
+<p class="meta"><strong>Plan ref</strong>: <code>plan:001</code>
+   (<code>docs/plans/001-discord-delivery.html</code>, AC1–AC7) &nbsp;·&nbsp;
+   <strong>Inspector</strong>: 独立コンテキスト（implementer 申告は非依拠）&nbsp;·&nbsp;
+   <strong>Inspected branch</strong>: <code>master</code> @ <code>e851eef</code>（作業ツリー: 未コミットの本変更を含む）</p>
+
+<h2>Verdict: GO</h2>
+<p><span class="verdict go">GO</span> &nbsp;<span class="meta">全 AC 充足・build 成功・test 78 件 green・本変更起因の新規 lint エラーなし。</span></p>
+
+<h2>Summary</h2>
+<p>AC1–AC7 をコードと実コマンド実行の両面で独立検証した。設計レビューの Must-fix（M1 分割規約の厳密復元契約、M2 空入力で POST 0 件 + 空 txt skip、M3 workflow の文字列比較条件・annotation 可視化・配置順）はすべて実装に反映済み。<code>splitIntoMessages</code> の <code>chunks.join('') === text</code> 不変条件は実フィクスチャ <code>newsletter-kSmyXNiKZDznRMGx4G9c.txt</code>（末尾改行なし・<code>\n\n</code> 段落）で round-trip 検証し、limit=1900/100/7/1 すべてで成立・各 chunk ≤ limit・空 chunk なしを確認した。lint の残エラーは本変更<strong>以前から存在する既知の先行課題</strong>のみで、本タスクの NOGO 根拠にしない。</p>
+
+<h2>Acceptance criteria status</h2>
+<div class="mermaid">
+stateDiagram-v2
+  direction LR
+  [*] --> AC1
+  AC1: AC1 ✅ channelId 伝搬
+  AC2: AC2 ✅ 分割/復元契約
+  AC3: AC3 ✅ POST/Bot/429
+  AC4: AC4 ✅ exit code 分岐
+  AC5: AC5 ✅ workflow ステップ
+  AC6: AC6 ✅ build/test/lint
+  AC7: AC7 ✅ docs
+  AC1 --> AC2 --> AC3 --> AC4 --> AC5 --> AC6 --> AC7 --> [*]
+</div>
+<table>
+  <tr><th>criterion</th><th>状態</th><th>evidence</th></tr>
+  <tr><td>AC1</td><td class="ok">✅ met</td>
+      <td><code>scripts/fetch-themes.ts</code> L41–44 で <code>typeof data.discordChannelId === 'string' &amp;&amp; length&gt;0</code> のときだけ採用、L90 で <code>...(theme.discordChannelId ? {…} : {})</code> 条件 spread。未設定テーマでは JSON から key 自体が省略される（<code>: null</code> でなく不在）。型は <code>ThemeData</code>/<code>ThemeOutput</code> に <code>discordChannelId?: string</code> 追加、<code>src/types/index.ts</code> の <code>Theme</code> にも反映。</td></tr>
+  <tr><td>AC2</td><td class="ok">✅ met</td>
+      <td><code>splitIntoMessages</code>（<code>src/application/discord-sender.ts</code> L30–74, export 済 純粋関数）。空入力→<code>[]</code>（L31）。<code>text.match(/[^\n]*\n|[^\n]+/g)</code> で各 <code>\n</code> を直前行末に付けたセグメント化（M1 提案の厳密復元方式）。貪欲結合・単一行 limit 超は <code>slice(0,limit)</code> 強制分割。<strong>実証</strong>: 実フィクスチャで <code>join('')===text</code> 厳密一致・各 chunk 1..limit を limit=1900/100/7/1 で確認（下記コマンド出力）。ユニットテスト 11 ケース（exact-limit / limit+1 / force-slice / <code>\n\n</code> / trailing-nl / 実フィクスチャ default+tiny100）green。</td></tr>
+  <tr><td>AC3</td><td class="ok">✅ met</td>
+      <td><code>post()</code> L104–127 / <code>postChunkWithRetry</code> L133–190。URL <code>https://discord.com/api/v10/channels/${channelId}/messages</code>、ヘッダ <code>Authorization: Bot ${token}</code>＋<code>Content-Type: application/json</code>、body <code>{content}</code>。429 は <code>resolveRetryDelay</code>（body <code>retry_after</code> 一次 / <code>Retry-After</code> ヘッダ二次 / <code>1s*(retry+1)</code> 既定、<code>DISCORD_MAX_RETRY_DELAY_MS=60000</code> でクランプ＝N2 反映）で待機し同 chunk 再送。テストは <code>vi.stubGlobal('fetch')</code>＋<code>vi.useFakeTimers</code> で URL/ヘッダ/body・429→200 リトライ・403 非リトライ・404 部分配信続行を検証。</td></tr>
+  <tr><td>AC4</td><td class="ok">✅ met</td>
+      <td><code>scripts/post-to-discord.ts</code>。themes.json 走査、channelId 文字列を持つテーマを対象化・未設定は skip ログ（L42–46）。<strong>対象0件→正常 return（exit 0）</strong>（L48–51）。<strong>対象あり＋<code>DISCORD_BOT_TOKEN</code> 未設定→exit 1</strong>＋<code>::error::</code>（L53–60）。txt 不在→warn skip（L73–76）、<strong>空/空白 txt→warn skip</strong>（M2、L79–82）。部分/全失敗時 <code>hadFailure</code> で <strong>exit 1</strong>＋テーマ毎 <code>::error::</code> annotation（L93–111）。themes.json 不在/壊れも exit 1＋<code>::error::</code>（N3、L19–33）。</td></tr>
+  <tr><td>AC5</td><td class="ok">✅ met</td>
+      <td><code>.github/workflows/newsletter.yml</code> L170–184。<code>Post to Discord</code> ステップは <code>if: steps.fetch-themes.outputs.has_themes == 'true' &amp;&amp; inputs.dry_run != true</code>（<strong>文字列 <code>'true'</code> 比較</strong>＝既存 Send ステップ L160 と同一記法、M3 反映）、<code>continue-on-error: true</code>、<code>id: post-discord</code>。直後に <code>Warn on Discord post failure</code>（<code>steps.post-discord.outcome == 'failure'</code> で <code>::warning::</code>）＝失敗可視化（M3）。<code>Send newsletters</code>（L159–168）は温存＝メール併用。<code>Update delivery timestamp</code>（L186–）は Discord の後段＝continue-on-error により Discord 失敗が timestamp 更新を止めない。<code>validate-config</code> は <code>DISCORD_BOT_TOKEN</code> を<strong>必須化していない</strong>（L36–76 に登場せず）。</td></tr>
+  <tr><td>AC6</td><td class="ok">✅ met</td>
+      <td><code>npm run build</code> 成功（tsc, exit 0）。<code>npm test</code> = <strong>7 files / 78 tests passed</strong>。<code>npm run lint</code> の残エラーは <code>src/utils/schedule-matcher.ts</code> の no-case-declarations 2 件 ＋ 全 7 テストファイルの <code>parserOptions.project</code> parsing error のみで、いずれも<strong>本変更以前から存在する既知の先行課題</strong>（eslint は <code>tsconfig.json</code> を project に指定し、同 config が <code>tests/</code> を exclude しているため全テストが等しく出る構造的問題）。本変更の src/scripts 各ファイルは個別 lint で<strong>0 エラー</strong>。新規テスト <code>discord-sender.test.ts</code> の parsing error は他 6 既存テストと同一クラスであり新規エラーではない。build 失敗・test 失敗・本変更起因の新規 lint エラーは無し。</td></tr>
+  <tr><td>AC7</td><td class="ok">✅ met</td>
+      <td><code>README.md</code> L58–67/173/179–180/206 ＋ <code>README.ja.md</code> 同等箇所に Bot 作成・トークン発行・<code>discordChannelId</code>・併用挙動を記載。<code>.env.sample</code> L16–21 に <code>DISCORD_BOT_TOKEN=</code>（任意・guild 1240905723555086336・Send Messages 権限・Firestore per-theme 選択）を追記。</td></tr>
+</table>
+
+<h2>実行コマンド出力（要約）</h2>
+<pre class="code"><code>$ npm run build        → tsc, exit 0（型エラーなし）
+$ npm test             → Test Files 7 passed (7) / Tests 78 passed (78)  Duration 7.34s
+$ npm run lint         → 9 errors, 0 warnings（全て既知の先行課題、下記参照）
+$ node (split 検証, dist 使用):
+  ok empty            chunks=0
+  ok exact-limit      chunks=1  maxlen=10
+  ok limit+1          chunks=2  maxlen=10
+  ok multi-line       chunks=2  maxlen=8
+  ok double-nl        chunks=2  maxlen=2
+  ok trailing-nl      chunks=1  maxlen=12
+  ok fixture-default  chunks=2  maxlen=1768   (join('')===text 厳密一致)
+  ok fixture-tiny-100 chunks=35 maxlen=100
+  ok fixture-tiny-7   chunks=426 maxlen=7
+  ok fixture-tiny-1   chunks=2871 maxlen=1
+  ok forceslice+seg   chunks=3  maxlen=10
+  ALL PASS</code></pre>
+
+<h2>Findings</h2>
+<ol>
+  <li><strong>(info) 既知の先行課題（本タスクの責任外・NOGO根拠にせず）</strong>:
+      <code>npm run lint</code> の 9 エラーは全て本変更前から存在。内訳 ―
+      <code>src/utils/schedule-matcher.ts:98-99</code> の <code>no-case-declarations</code> 2 件（本変更で未編集ファイル）、
+      および 7 テストファイル全ての <code>Parsing error: "parserOptions.project" ...</code>（<code>.eslintrc.json</code> が <code>./tsconfig.json</code> を project 指定し、当 tsconfig が <code>tests/</code> を exclude しているための構造的問題）。
+      新規テスト <code>tests/application/discord-sender.test.ts</code> も同一の parsing error を出すが、これは既存 6 テストと完全同型であり<strong>新規エラークラスではない</strong>。
+      実装側 <code>src/application/discord-sender.ts</code> / <code>scripts/post-to-discord.ts</code> / <code>src/types/index.ts</code> / <code>scripts/fetch-themes.ts</code> / <code>src/application/index.ts</code> は個別 eslint で 0 エラー。
+      <em>将来の改善候補（任意・本件外）</em>: lint 用に <code>tests</code> を含む別 tsconfig を用意するか override で project を切り替えると先行エラーが解消できる。</li>
+  <li><strong>(info) Must-fix 反映状況</strong>:
+      M1（分割規約の厳密復元・<code>join('')===text</code>・実フィクスチャ採用）✅、
+      M2（空入力で fetch 0 回・<code>totalChunks:0</code>・空 txt warn+skip）✅、
+      M3（workflow 文字列比較・<code>::warning::</code> 可視化・配置順）✅。
+      Nice-to-have N2（retry_after クランプ）/ N3（themes.json 不在で exit 1）も取り込み済み。</li>
+  <li><strong>(minor) 残課題（コード外・運用、plan 既記）</strong>:
+      Bot のギルド参加・チャンネル権限、Firestore 各テーマへの <code>discordChannelId</code> 投入、GitHub Secret <code>DISCORD_BOT_TOKEN</code> 設定は本実装スコープ外（plan の Open questions 通り）。GO 判定を妨げない。</li>
+</ol>
+
+<blockquote>NOGO ではないため <strong>Fix Required は無し</strong>。</blockquote>
+
+</body>
+</html>
