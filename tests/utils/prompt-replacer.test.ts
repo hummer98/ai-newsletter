@@ -24,14 +24,15 @@ describe('prompt-replacer', () => {
       expect(vars.days).toBe('7');
     });
 
-    it('should handle different date ranges', () => {
+    it('should always use a fixed 7-day window regardless of lastDeliveredAt', () => {
+      // lastDeliveredAt は 14 日前だが、period は常に「今日から7日前」起点に固定される
       const lastDelivered = new Date('2024-12-01T00:00:00');
       const current = new Date('2024-12-15T00:00:00');
 
       const vars = generatePromptVariables(lastDelivered, current);
 
-      expect(vars.days).toBe('14');
-      expect(vars.period).toBe('2024年12月1日から2024年12月15日まで');
+      expect(vars.days).toBe('7');
+      expect(vars.period).toBe('2024年12月8日から2024年12月15日まで');
     });
   });
 

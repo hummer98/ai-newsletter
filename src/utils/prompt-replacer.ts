@@ -16,6 +16,9 @@ function daysBetween(start: Date, end: Date): number {
   return Math.round((end.getTime() - start.getTime()) / msPerDay);
 }
 
+/** Fixed lookback window (days) for the {{period}} start date */
+export const LOOKBACK_DAYS = 7;
+
 /**
  * Variables available for prompt replacement
  */
@@ -24,24 +27,30 @@ export interface PromptVariables {
   period: string;
   /** Today's date: "YYYY年MM月DD日" */
   today: string;
-  /** Number of days since last delivery */
+  /** Number of days in the lookback window (always LOOKBACK_DAYS) */
   days: string;
 }
 
 /**
- * Generate prompt variables based on last delivery date
- * @param lastDeliveredAt - Last delivery timestamp
+ * Generate prompt variables.
+ *
+ * The {{period}} start date is ALWAYS "today minus LOOKBACK_DAYS (7) days",
+ * independent of lastDeliveredAt. This keeps the collection window fixed at the
+ * last 7 days so that a long delivery gap (stale lastDeliveredAt) never expands
+ * the window into a huge backward range that surfaces old news.
+ *
+ * @param _lastDeliveredAt - Last delivery timestamp (kept for API compatibility; not used for the window)
  * @param currentDate - Current date (defaults to now)
  * @returns Object with all available variables
  */
 export function generatePromptVariables(
-  lastDeliveredAt?: Date,
+  _lastDeliveredAt?: Date,
   currentDate: Date = new Date()
 ): PromptVariables {
   const today = formatDateJapanese(currentDate);
 
-  // Default to 7 days ago if no lastDeliveredAt
-  const startDate = lastDeliveredAt || new Date(currentDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+  // 開始日は常に「今日から7日前」に固定する
+  const startDate = new Date(currentDate.getTime() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
   const start = formatDateJapanese(startDate);
   const period = `${start}から${today}まで`;
   const days = daysBetween(startDate, currentDate).toString();
